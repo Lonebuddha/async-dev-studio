@@ -1,0 +1,4 @@
+Microsoft Teams product icon, from Microsoft's Office/Fabric brand assets:
+https://res.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/png/teams_48x1.png
+
+Microsoft Teams is a Microsoft product. This asset identifies the Teams plugin.
