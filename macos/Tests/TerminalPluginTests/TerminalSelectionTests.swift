@@ -1,9 +1,63 @@
 import AppKit
 import SwiftTerm
+import StudioKernel
+import ClaudePlugin
+import CodexPlugin
 @testable import TerminalPlugin
 
 @MainActor
 final class TerminalSelectionTests {
+    func testWheelScrollingIsInheritedByAllTerminalPlugins() throws {
+        _ = NSApplication.shared
+        for plugin: TerminalAppPlugin in [TerminalPlugin(), ClaudePlugin(), CodexPlugin()] {
+            let instance = AppInstance(appTypeID: plugin.descriptor.id, name: "Wheel test",
+                configuration: try plugin.configurationData(shell: "/bin/sh", workingDirectory: "/tmp", startupCommands: []))
+            let controller = try plugin.makeController(for: instance)
+            let view = controller.view
+            let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.close() }
+            window.contentView = TerminalHostView(terminalView: view)
+            let probe = WheelProbe(); view.terminalDelegate = probe
+            func wheel(_ direction: Int32, flags: NSEvent.ModifierFlags = []) {
+                let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: direction, wheel2: 0, wheel3: 0)!
+                let event = NSEvent(cgEvent: cg)!
+                // Recreate the modifier flags through the underlying CG event.
+                var cgFlags: CGEventFlags = []
+                if flags.contains(.shift) { cgFlags.insert(.maskShift) }
+                cg.flags = cgFlags
+                view.scrollWheel(with: NSEvent(cgEvent: cg) ?? event)
+            }
+            lines(1...100, to: view)
+            let bottom = view.terminal.buffer.yDisp
+            wheel(1)
+            try expectTrue(view.terminal.buffer.yDisp < bottom)
+            wheel(-1)
+            try expectEqual(view.terminal.buffer.yDisp, bottom)
+            try expectTrue(probe.output.isEmpty)
+            for mode in [1000, 1002, 1003] {
+                feed("\u{1b}[?1049h\u{1b}[?\(mode)h\u{1b}[?1006h", to: view)
+                probe.output = ""
+                wheel(1); try expectTrue(probe.output.contains("\u{1b}[<64;"))
+                probe.output = ""
+                wheel(-1); try expectTrue(probe.output.contains("\u{1b}[<65;"))
+                // Shift-wheel always allows native scrollback, even if the app
+                // still has mouse reporting enabled after leaving fullscreen.
+                feed("\u{1b}[?1049l", to: view)
+                probe.output = ""
+                wheel(1, flags: .shift)
+                try expectTrue(probe.output.isEmpty)
+                try expectTrue(view.terminal.buffer.yDisp < bottom)
+                wheel(-1, flags: .shift)
+                try expectEqual(view.terminal.buffer.yDisp, bottom)
+                view.allowMouseReporting = false
+                wheel(1); try expectTrue(probe.output.isEmpty)
+                view.scrollDown(lines: 100)
+                view.allowMouseReporting = true
+                feed("\u{1b}[?\(mode)l", to: view)
+            }
+        }
+    }
     func testClickRestoresKeyboardFocus() throws {
         try fixture { view, window in
             let other = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
@@ -108,4 +162,18 @@ final class TerminalSelectionTests {
             }
         }
     }
+}
+
+private final class WheelProbe: TerminalViewDelegate {
+    var output = ""
+    func send(source: TerminalView, data: ArraySlice<UInt8>) { output += String(decoding: data, as: UTF8.self) }
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+    func setTerminalTitle(source: TerminalView, title: String) {}
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+    func scrolled(source: TerminalView, position: Double) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+    func bell(source: TerminalView) {}
+    func clipboardCopy(source: TerminalView, content: Data) {}
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
 }

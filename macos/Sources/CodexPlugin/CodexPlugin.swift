@@ -25,7 +25,7 @@ public final class CodexPlugin: TerminalAppPlugin {
         let notification = try sessions.notificationConfiguration(for: instance.id)
         var command = "exec " + CodexSessionStore.quote(executable)
         if let sessionID { command += " resume " + CodexSessionStore.quote(sessionID.uuidString.lowercased()) }
-        command += " --dangerously-bypass-approvals-and-sandbox -c " + CodexSessionStore.quote(notification)
+        command += " --no-alt-screen --dangerously-bypass-approvals-and-sandbox -c " + CodexSessionStore.quote(notification)
         configuration.startupCommands = [command]
         return configuration
     }

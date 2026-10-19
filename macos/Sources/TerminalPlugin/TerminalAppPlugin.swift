@@ -2,6 +2,8 @@ import Foundation
 import StudioKernel
 
 /// Shared terminal plugin base. Concrete plugins supply their configuration and launch policy.
+/// Every subclass uses the same controller and emulator: wheel events scroll native
+/// history or are reported to mouse-aware programs; Shift-wheel bypasses reporting.
 open class TerminalAppPlugin: AppPlugin {
     public let descriptor: AppDescriptor
     public init(id: String, name: String) { descriptor = AppDescriptor(id: id, name: name) }

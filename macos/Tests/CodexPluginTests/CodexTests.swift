@@ -108,7 +108,7 @@ final class CodexTests {
     }
 
     static func fakeCLI(arguments: [String]) throws {
-        guard arguments.contains("--dangerously-bypass-approvals-and-sandbox"),
+        guard arguments.contains("--no-alt-screen"), arguments.contains("--dangerously-bypass-approvals-and-sandbox"),
               let index = arguments.firstIndex(of: "-c"), index + 1 < arguments.count else {
             throw NSError(domain: "CodexFixtureArguments", code: 1)
         }

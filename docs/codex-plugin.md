@@ -2,7 +2,7 @@
 
 The compiled-in macOS Codex plugin inherits `TerminalAppPlugin`, alongside Terminal and Claude. It uses the same PTY, emulator, clipboard, selection, tabs, configuration-on-next-start, and shutdown behavior. Its opaque configuration contains version 1, shell, and working directory. The user configures a name and folder, with no Startup commands field.
 
-A new instance starts `codex --dangerously-bypass-approvals-and-sandbox`. A saved instance starts `codex resume <session UUID> --dangerously-bypass-approvals-and-sandbox`. This matches Claude's unrestricted startup policy. The login shell supplies the executable PATH, environment, and authentication normally used by Codex CLI. The plugin does not select a model, provision credentials, or make API requests itself.
+A new instance starts `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox`. A saved instance starts `codex resume <session UUID> --no-alt-screen --dangerously-bypass-approvals-and-sandbox`. Inline mode retains terminal scrollback. Wheel handling is shared by all terminal subclasses, including forwarding wheel events to mouse-aware programs and Shift-wheel access to native history. This matches Claude's unrestricted startup policy. The login shell supplies the executable PATH, environment, and authentication normally used by Codex CLI. The plugin does not select a model, provision credentials, or make API requests itself.
 
 ## Session persistence
 

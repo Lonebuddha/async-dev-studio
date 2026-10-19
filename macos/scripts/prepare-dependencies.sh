@@ -50,6 +50,44 @@ def change(path, original, corrected):
 root = path.parents[0]
 mac = root / 'Mac/MacTerminalView.swift'
 apple = root / 'Apple/AppleTerminalView.swift'
+# Shared wheel handling: native scrollback, mouse reporting, and Shift bypass.
+change(mac, '''    public override func scrollWheel(with event: NSEvent) {
+        if event.deltaY == 0 {
+            return
+        }
+        let velocity = calcScrollingVelocity(delta: Int (abs (event.deltaY)))
+        if event.deltaY > 0 {
+            scrollUp (lines: velocity)
+        } else {
+            scrollDown(lines: velocity)
+        }
+    }''', '''    public override func scrollWheel(with event: NSEvent) {
+        // AppKit maps Shift-wheel to the horizontal axis. Treat that as vertical
+        // history navigation when Shift is used to bypass mouse reporting.
+        let studioScrollDelta = event.deltaY != 0 ? event.deltaY
+            : (event.modifierFlags.contains(.shift) ? event.deltaX : 0)
+        if studioScrollDelta == 0 {
+            return
+        }
+        let velocity = calcScrollingVelocity(delta: Int (abs (studioScrollDelta)))
+        if allowMouseReporting && !event.modifierFlags.contains(.shift) && terminal.mouseMode != .off {
+            let hit = calculateMouseHit(with: event)
+            let flags = terminal.encodeButton(button: studioScrollDelta > 0 ? 4 : 5,
+                release: false, shift: false, meta: event.modifierFlags.contains(.option),
+                control: event.modifierFlags.contains(.control))
+            for _ in 0..<min(velocity, 20) {
+                terminal.sendEvent(buttonFlags: flags, x: hit.grid.col,
+                    y: min(max(hit.grid.row, 0), terminal.rows - 1),
+                    pixelX: hit.pixels.col, pixelY: hit.pixels.row)
+            }
+            return
+        }
+        if studioScrollDelta > 0 {
+            scrollUp (lines: velocity)
+        } else {
+            scrollDown(lines: velocity)
+        }
+    }''')
 change(mac, '    public override func mouseDown(with event: NSEvent) {', '''    public override func mouseDown(with event: NSEvent) {
         // A SwiftUI tab update is not guaranteed when the user clicks back
         // after focusing another control. Restore the native input responder.

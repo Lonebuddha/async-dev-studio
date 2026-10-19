@@ -163,6 +163,7 @@ struct Runner {
             tests.append(("Codex shared terminal runtime and resume", { try await CodexTests().testSessionIsolationAndRestart(nativeRuntime: true) }))
             tests.append(("Claude shared terminal lifecycle and reconfiguration", { try await ClaudeTests().testSharedRuntimeRestartsAndConfigurationChanges() }))
             let selection = TerminalSelectionTests()
+            tests.append(("terminal inherited scrollback and application wheel events", { try selection.testWheelScrollingIsInheritedByAllTerminalPlugins() }))
             tests.append(("terminal click restores keyboard focus", { try selection.testClickRestoresKeyboardFocus() }))
             tests.append(("terminal selection scrollback and rollover", { try selection.testSelectionAfterScrollbackAndRollover() }))
             tests.append(("terminal selection during output and eviction", { try selection.testOutputPreservesSelectionUntilOverwrittenOrEvicted() }))

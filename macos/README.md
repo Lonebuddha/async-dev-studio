@@ -25,7 +25,7 @@ Cancellation and workspace-save failures keep the project and its open tabs. Bro
 
 ## Codex instances
 
-Choose **Add Codex** in the project context menu, toolbar, or overview. Configure a name, shell, and working folder. It shares the terminal base with Claude and starts `codex --dangerously-bypass-approvals-and-sandbox`. After a completed response, the instance remembers its conversation and uses `codex resume <session ID>` on subsequent starts. Only normal Terminal instances expose Startup commands. Codex CLI must be installed on the login shell's PATH and signed in.
+Choose **Add Codex** in the project context menu, toolbar, or overview. Configure a name, shell, and working folder. It shares the terminal base with Claude and starts `codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox`. Inline mode preserves native terminal scrollback on new and resumed sessions. After a completed response, the instance remembers its conversation and uses `codex resume <session ID>` on subsequent starts. Only normal Terminal instances expose Startup commands. Codex CLI must be installed on the login shell's PATH and signed in.
 
 The CLI's per-process notification callback records only the session ID and working folder under `~/Library/Application Support/AsyncDevStudio/CodexSessions/<instance UUID>/session.json`. This overrides `notify` for this process only; global configuration and built-in TUI notifications remain unchanged. A new conversation interrupted before its first completed response has no saved ID yet. See [Codex plugin details](../docs/codex-plugin.md).
 
@@ -173,3 +173,7 @@ The build and test scripts run `prepare-dependencies.sh` after resolving package
 Terminal output and open-tab layout are retained only during the running application session. Startup-command input treats each nonempty line as a command; use a script file for multiline constructs. Detached jobs which deliberately leave the shell's session are outside managed terminal shutdown. Terminal escape sequences cannot write the clipboard automatically; user-initiated copy/paste is supported.
 
 The small JSON store saves synchronously on the main actor. Concurrent application processes sharing a workspace are unsupported; use normal `open` to reuse the application rather than `open -n`. This development build runs shells with the user's normal permissions and does not enable an application sandbox.
+
+### Shared terminal scrolling
+
+Every `TerminalAppPlugin` subclass uses the same terminal controller and wheel handling. With mouse reporting off, the wheel and trackpad scroll the emulator’s history. When a program requests mouse input, wheel-up/down events are sent to that program so it can scroll its own interface. **Shift-scroll** bypasses reporting and scrolls local history, including macOS’s Shift-wheel horizontal-axis mapping. Alternate-screen programs have no native scrollback; their own mouse or keyboard navigation controls their history. Codex starts with `--no-alt-screen` so its transcript remains in the normal terminal buffer.
