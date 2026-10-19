@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import StudioKernel
 import TerminalPlugin
+import StudioPlatform
 
 struct TerminalEditRequest: Identifiable {
     let id = UUID()
@@ -40,7 +41,7 @@ struct TerminalConfigurationView: View {
                 TextField("Shell (zsh, bash, or sh)", text: $shell)
                 HStack {
                     TextField("Working directory", text: $directory)
-                    Button("Choose…", action: chooseDirectory)
+                    DirectoryPickerButton(path: $directory) { error = $0 }
                 }
             }
             if request.plugin.supportsStartupCommands {
@@ -82,11 +83,4 @@ struct TerminalConfigurationView: View {
         } catch { self.error = error.localizedDescription }
     }
 
-    private func chooseDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url { directory = url.path }
-    }
 }

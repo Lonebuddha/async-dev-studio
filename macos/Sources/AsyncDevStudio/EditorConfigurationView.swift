@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import StudioKernel
 import EditorPlugin
+import StudioPlatform
 
 struct EditorEditRequest: Identifiable {
     let id = UUID()
@@ -30,11 +31,7 @@ struct EditorConfigurationView: View {
                 TextField("Name", text: $name).focused($focused)
                 HStack {
                     TextField("Folder", text: $folder)
-                    Button("Choose…") {
-                        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-                        panel.allowsMultipleSelection = false
-                        if panel.runModal() == .OK, let url = panel.url { folder = url.path }
-                    }
+                    DirectoryPickerButton(path: $folder) { error = $0 }
                 }
             }
             Text("Browse this folder and edit its text files in separate tabs. Changing the folder closes the current editor after resolving unsaved changes.")

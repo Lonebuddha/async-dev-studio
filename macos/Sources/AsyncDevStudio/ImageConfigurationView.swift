@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import StudioKernel
 import ImagePlugin
+import StudioPlatform
 
 struct ImageEditRequest: Identifiable {
     let id = UUID()
@@ -29,11 +30,7 @@ struct ImageConfigurationView: View {
                 TextField("Name", text: $name).focused($focused)
                 HStack {
                     TextField("Folder", text: $folder)
-                    Button("Choose…") {
-                        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-                        panel.allowsMultipleSelection = false
-                        if panel.runModal() == .OK, let url = panel.url { folder = url.path }
-                    }
+                    DirectoryPickerButton(path: $folder) { error = $0 }
                 }
             }
             Text("Browse folders, view image thumbnails, and zoom or pan individual images. Changing the folder resets the current view.")

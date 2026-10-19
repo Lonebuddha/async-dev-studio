@@ -158,6 +158,11 @@ struct Runner {
             tests.append(("native editor undo and tabs", { try editor.testNativeEditingKeepsUndoSeparateAcrossTabs() }))
             tests.append(("native editor indentation and CRLF", { try editor.testNativeIndentationAndCRLF() }))
         }
+        if ProcessInfo.processInfo.environment["STUDIO_PICKER_NATIVE_TESTS"] == "1" {
+            tests.append(("directory picker asynchronous presentation and ownership", { try DirectoryPickerTests().testAsynchronousSheetOwnershipSelectionAndDuplicateClicks() }))
+            tests.append(("directory picker cancellation and stale callbacks", { try DirectoryPickerTests().testCancellationAndStaleCompletionNeverChangeConfiguration() }))
+            tests.append(("directory picker missing window, invalid selection and disabled controls", { try DirectoryPickerTests().testMissingWindowInvalidSelectionAndDisabledControls() }))
+        }
         if ProcessInfo.processInfo.environment["STUDIO_IMAGE_NATIVE_TESTS"] == "1" {
             tests.append(("image viewer native canvas keyboard and fit", { try ImageTests().testNativeCanvasNavigationAndFit() }))
         }

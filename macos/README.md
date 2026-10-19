@@ -181,3 +181,7 @@ Every `TerminalAppPlugin` subclass uses the same terminal controller and wheel h
 ### Shared terminal text encoding
 
 All terminal plugins send and render UTF-8 text. Shell startup validates the effective character encoding from `LC_ALL`, `LC_CTYPE`, and `LANG`, using locale objects without changing the app’s global locale. Existing valid UTF-8 settings are preserved. Missing, invalid, or legacy encodings are replaced with a valid UTF-8 locale, retaining the region where possible and falling back to `en_US.UTF-8`. This includes Finder launches with no locale variables. The shared native terminal accepts both plain and attributed text from macOS input methods. Restart existing terminal sessions after upgrading to apply the shell environment change; user shell configuration can still override these startup settings.
+
+### Folder selection in configuration sheets
+
+Terminal, Claude, Codex, Text Editor, and Image Viewer configurations share an asynchronous native folder picker. The Choose button opens the picker as a sheet on its own configuration window, without a nested blocking modal loop or reliance on the app’s key window. Repeated clicks cannot open duplicate pickers. Cancel leaves the configured path unchanged, and dismissing the configuration cancels its picker and ignores late callbacks. Run `STUDIO_PICKER_NATIVE_TESTS=1 scripts/test.sh` for native window-ownership, cancellation, stale-callback, and disabled-control tests. The tests use a controlled panel presenter; an interactive system-dialog check is separate.
