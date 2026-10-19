@@ -60,6 +60,8 @@ struct Runner {
         let editor = EditorTests()
         let restart = RestartTests()
         var tests: [(String, () async throws -> Void)] = [
+            ("terminal UTF-8 locale defaults and overrides", { try TerminalEncodingTests().testLocalePolicy() }),
+            ("terminal Russian text through login shell", { try await TerminalEncodingTests().testRussianInputWithGUIEnvironment() }),
             ("image viewer sorted navigation and refresh", { try ImageTests().testListingNavigationAndRefresh() }),
             ("image viewer decoding and thumbnails", { try ImageTests().testDecodingThumbnailsAndCorruptFiles() }),
             ("image viewer fit, anchored zoom and pan", { try ImageTests().testFitZoomAndPan() }),
@@ -163,6 +165,7 @@ struct Runner {
             tests.append(("Codex shared terminal runtime and resume", { try await CodexTests().testSessionIsolationAndRestart(nativeRuntime: true) }))
             tests.append(("Claude shared terminal lifecycle and reconfiguration", { try await ClaudeTests().testSharedRuntimeRestartsAndConfigurationChanges() }))
             let selection = TerminalSelectionTests()
+            tests.append(("terminal Cyrillic text and composed input inheritance", { try selection.testCyrillicTextInputAcrossTerminalPlugins() }))
             tests.append(("terminal inherited scrollback and application wheel events", { try selection.testWheelScrollingIsInheritedByAllTerminalPlugins() }))
             tests.append(("terminal click restores keyboard focus", { try selection.testClickRestoresKeyboardFocus() }))
             tests.append(("terminal selection scrollback and rollover", { try selection.testSelectionAfterScrollbackAndRollover() }))

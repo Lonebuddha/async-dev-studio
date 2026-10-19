@@ -177,3 +177,7 @@ The small JSON store saves synchronously on the main actor. Concurrent applicati
 ### Shared terminal scrolling
 
 Every `TerminalAppPlugin` subclass uses the same terminal controller and wheel handling. With mouse reporting off, the wheel and trackpad scroll the emulator’s history. When a program requests mouse input, wheel-up/down events are sent to that program so it can scroll its own interface. **Shift-scroll** bypasses reporting and scrolls local history, including macOS’s Shift-wheel horizontal-axis mapping. Alternate-screen programs have no native scrollback; their own mouse or keyboard navigation controls their history. Codex starts with `--no-alt-screen` so its transcript remains in the normal terminal buffer.
+
+### Shared terminal text encoding
+
+All terminal plugins send and render UTF-8 text. Shell startup validates the effective character encoding from `LC_ALL`, `LC_CTYPE`, and `LANG`, using locale objects without changing the app’s global locale. Existing valid UTF-8 settings are preserved. Missing, invalid, or legacy encodings are replaced with a valid UTF-8 locale, retaining the region where possible and falling back to `en_US.UTF-8`. This includes Finder launches with no locale variables. The shared native terminal accepts both plain and attributed text from macOS input methods. Restart existing terminal sessions after upgrading to apply the shell environment change; user shell configuration can still override these startup settings.

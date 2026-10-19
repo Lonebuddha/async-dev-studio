@@ -58,6 +58,24 @@ final class TerminalSelectionTests {
             }
         }
     }
+    func testCyrillicTextInputAcrossTerminalPlugins() throws {
+        _ = NSApplication.shared
+        for plugin: TerminalAppPlugin in [TerminalPlugin(), ClaudePlugin(), CodexPlugin()] {
+            let instance = AppInstance(appTypeID: plugin.descriptor.id, name: "Russian input",
+                configuration: try plugin.configurationData(shell: "/bin/sh", workingDirectory: "/tmp", startupCommands: []))
+            let controller = try plugin.makeController(for: instance)
+            let probe = WheelProbe(); controller.view.terminalDelegate = probe
+            let text = "Привет, мир! Ёжик — русский текст."
+            controller.view.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            try expectEqual(probe.output, text)
+            controller.view.insertText(NSAttributedString(string: text), replacementRange: NSRange(location: NSNotFound, length: 0))
+            try expectEqual(probe.output, text + text)
+            let bytes = Array(text.utf8)
+            // PTY reads may split inside a Cyrillic code point.
+            for byte in bytes { controller.view.feed(byteArray: [byte][...]) }
+            try expectTrue(controller.view.terminal.getLine(row: 0)!.translateToString(trimRight: true).contains(text))
+        }
+    }
     func testClickRestoresKeyboardFocus() throws {
         try fixture { view, window in
             let other = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 30))

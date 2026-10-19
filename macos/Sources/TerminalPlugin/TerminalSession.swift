@@ -15,6 +15,7 @@ public final class TerminalSession: ObservableObject {
     public var onOutput: ((Data) -> Void)?
     public private(set) var configuration: TerminalConfiguration
     private var nextConfiguration: TerminalConfiguration?
+    private let inheritedEnvironment: [String: String]
     private var master: Int32 = -1
     private var reader: DispatchSourceRead?
     private var writer: DispatchSourceWrite?
@@ -24,7 +25,10 @@ public final class TerminalSession: ObservableObject {
     private var columns = 80
     private var rows = 24
 
-    public init(configuration: TerminalConfiguration) { self.configuration = configuration }
+    public init(configuration: TerminalConfiguration, environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.configuration = configuration
+        inheritedEnvironment = environment
+    }
 
     public func start() throws {
         guard processID == nil else { return }
@@ -32,7 +36,7 @@ public final class TerminalSession: ObservableObject {
             let configuration = nextConfiguration ?? self.configuration
             try configuration.validate()
             let arguments = [configuration.shell] + configuration.arguments
-            var environment = ProcessInfo.processInfo.environment
+            var environment = TerminalEnvironment.utf8(inheritedEnvironment)
             environment["TERM"] = "xterm-256color"
             environment["COLORTERM"] = "truecolor"
             environment["SHELL"] = configuration.shell

@@ -66,6 +66,16 @@ public final class TerminalController: NSObject, ObservableObject, TerminalViewD
 /// Handle Copy before SwiftTerm's keyDown clears the selected text. SwiftUI's
 /// menu routing does not always consume AppKit terminal keyboard equivalents.
 final class StudioTerminalView: TerminalView {
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        // AppKit input methods can commit attributed text as well as strings.
+        // Both must take the same UTF-8 path to the PTY.
+        if let attributed = string as? NSAttributedString {
+            super.insertText(attributed.string, replacementRange: replacementRange)
+        } else {
+            super.insertText(string, replacementRange: replacementRange)
+        }
+    }
+
     private func isCopyShortcut(_ event: NSEvent) -> Bool {
         event.modifierFlags.contains(.command)
             && event.modifierFlags.intersection([.control, .option, .shift]).isEmpty
