@@ -61,6 +61,53 @@ final class EditorTests {
             try expectEqual(otherA.text, "alpha")
         }
     }
+    @MainActor func testDirectoryExpansionSurvivesCollapseAndRefresh() throws {
+        try fixture { root in
+            let editor = try EditorWorkspace(folder: root)
+            let folder = editor.root.appendingPathComponent("src", isDirectory: true)
+            let nested = folder.appendingPathComponent("nested", isDirectory: true)
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            _ = try file("a.txt", "a", at: nested)
+            editor.refresh()
+            try expectNil(editor.listing[folder])
+            editor.setDirectoryExpanded(folder, expanded: true)
+            editor.setDirectoryExpanded(nested, expanded: true)
+            try expectEqual(editor.listing[nested]?.map(\.name), ["a.txt"])
+            editor.setDirectoryExpanded(folder, expanded: false)
+            try expectFalse(editor.expandedDirectories.contains(folder))
+            try expectTrue(editor.expandedDirectories.contains(nested))
+            editor.setDirectoryExpanded(folder, expanded: true)
+            _ = try file("b.txt", "b", at: nested)
+            editor.refresh()
+            try expectEqual(editor.expandedDirectories, Set([folder, nested]))
+            try expectEqual(editor.listing[nested]?.map(\.name), ["a.txt", "b.txt"])
+            editor.setDirectoryExpanded(nested, expanded: false)
+            try expectEqual(editor.expandedDirectories, Set([folder]))
+        }
+    }
+    @MainActor func testDirectoryExpansionIsRetainedPerEditorInstance() throws {
+        try fixture { root in
+            let folder = root.appendingPathComponent("src", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let configuration = try EditorConfiguration(folder: root.path).encoded()
+            let first = AppInstance(appTypeID: "editor", name: "First", configuration: configuration)
+            let second = AppInstance(appTypeID: "editor", name: "Second", configuration: configuration)
+            let runtime = EditorRuntime()
+            try runtime.open(first)
+            let editor = runtime.controllers[first.id]!
+            let canonicalFolder = editor.root.appendingPathComponent("src", isDirectory: true)
+            editor.setDirectoryExpanded(canonicalFolder, expanded: true)
+            try runtime.open(second)
+            try expectTrue(runtime.controllers[second.id]!.expandedDirectories.isEmpty)
+            try runtime.open(first)
+            try expectTrue(runtime.controllers[first.id] === editor)
+            try expectEqual(editor.expandedDirectories, Set([canonicalFolder]))
+            runtime.controllers[second.id]!.setDirectoryExpanded(canonicalFolder, expanded: true)
+            editor.setDirectoryExpanded(canonicalFolder, expanded: false)
+            try expectTrue(editor.expandedDirectories.isEmpty)
+            try expectEqual(runtime.controllers[second.id]!.expandedDirectories, Set([canonicalFolder]))
+        }
+    }
     @MainActor func testDirtyStateAndSave() throws {
         try fixture { root in
             let url = try file("a.txt", "alpha\r\n", at: root)

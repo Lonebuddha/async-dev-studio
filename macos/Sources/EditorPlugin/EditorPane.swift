@@ -63,14 +63,19 @@ private struct EditorDirectoryRows: View {
 private struct EditorFolderRow: View {
     @ObservedObject var workspace: EditorWorkspace
     let entry: EditorEntry
-    @State private var expanded = false
+    private var expanded: Binding<Bool> {
+        Binding(
+            get: { workspace.expandedDirectories.contains(entry.url) },
+            set: { workspace.setDirectoryExpanded(entry.url, expanded: $0) }
+        )
+    }
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        DisclosureGroup(isExpanded: expanded) {
             EditorDirectoryRows(workspace: workspace, directory: entry.url)
         } label: {
             Label(entry.name, systemImage: "folder").lineLimit(1)
                 .contextMenu { Button("New File…") { EditorActions.newFile(in: entry.url, workspace: workspace) } }
-        }.onChange(of: expanded) { _, value in if value { workspace.loadDirectory(entry.url) } }
+        }
     }
 }
 private struct EditorFileTab: View {

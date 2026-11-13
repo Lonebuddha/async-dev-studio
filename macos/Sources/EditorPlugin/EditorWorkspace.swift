@@ -36,6 +36,8 @@ public final class EditorWorkspace: ObservableObject {
     @Published public private(set) var documents: [EditorDocument] = []
     @Published public var selectedID: UUID?
     @Published public private(set) var listing: [URL: [EditorEntry]] = [:]
+    // Keep tree expansion with the instance when SwiftUI recreates its pane.
+    @Published public private(set) var expandedDirectories: Set<URL> = []
     @Published public var error: String?
     public var selectedDocument: EditorDocument? { documents.first { $0.id == selectedID } }
     public convenience init(folder: URL) throws { try self.init(fileSystem: DiskEditorFileSystem(folder: folder)) }
@@ -46,6 +48,14 @@ public final class EditorWorkspace: ObservableObject {
     public func loadDirectory(_ url: URL) {
         do { listing[url] = try fileSystem.entries(in: url) }
         catch { self.error = error.localizedDescription }
+    }
+    public func setDirectoryExpanded(_ url: URL, expanded: Bool) {
+        if expanded {
+            expandedDirectories.insert(url)
+            loadDirectory(url)
+        } else {
+            expandedDirectories.remove(url)
+        }
     }
     public func refresh() {
         for url in Array(listing.keys) { loadDirectory(url) }

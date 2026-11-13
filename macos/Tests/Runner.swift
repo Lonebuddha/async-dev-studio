@@ -141,6 +141,8 @@ struct Runner {
             ("editor folder configuration", { try editor.testConfigurationAndInstancePersistence() }),
             ("editor file tree and containment", { try editor.testDirectoryListingAndSymlinkContainment() }),
             ("editor independent file tabs", { try editor.testTabsAndIndependentInstances() }),
+            ("editor directory expansion across collapse and refresh", { try editor.testDirectoryExpansionSurvivesCollapseAndRefresh() }),
+            ("editor directory expansion retained per instance", { try editor.testDirectoryExpansionIsRetainedPerEditorInstance() }),
             ("editor dirty state and save", { try editor.testDirtyStateAndSave() }),
             ("editor close decisions", { try editor.testSaveDiscardCancelOnClose() }),
             ("editor refresh retains tabs and updates save baseline", { try editor.testRefreshFromDiskKeepsTabsAndUpdatesSaveBaseline() }),
