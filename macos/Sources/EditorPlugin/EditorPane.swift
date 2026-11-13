@@ -86,21 +86,13 @@ private struct EditorFileTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 5)).help(document.url.path)
             .contextMenu {
                 Button("Save") { perform { try workspace.save(document) } }
-                Button("Reload from Disk…") { reload() }
+                Button("Reload from Disk…") { EditorActions.reload(document, workspace: workspace) }
                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([document.url]) }
                 Button("Close") { close() }
             }
     }
     private func close() {
         perform { _ = try workspace.closeFile(document.id, decision: document.isDirty ? EditorRuntime.askToSave(document) : .discard) }
-    }
-    private func reload() {
-        if document.isDirty {
-            let alert = NSAlert(); alert.messageText = "Discard changes and reload \(document.url.lastPathComponent)?"
-            alert.addButton(withTitle: "Reload"); alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        }
-        perform { try workspace.reload(document, discardChanges: true) }
     }
     private func perform(_ action: () throws -> Void) { do { try action() } catch { workspace.error = error.localizedDescription } }
 }
@@ -111,6 +103,9 @@ private struct EditorDocumentPane: View {
         VStack(spacing: 0) {
             HStack {
                 Button("Save") { perform { try workspace.save(document) } }.keyboardShortcut("s").disabled(!document.isDirty)
+                Button("Refresh from Disk", systemImage: "arrow.clockwise") {
+                    EditorActions.reload(document, workspace: workspace)
+                }.keyboardShortcut("r").help("Reload this document from disk (⌘R)")
                 Button("Save All") { perform { try workspace.saveAll() } }.keyboardShortcut("s", modifiers: [.command, .option])
                 Button("Find / Replace") {
                     guard let surface = document.surface else { return }
@@ -147,6 +142,17 @@ private struct EditorDocumentPane: View {
 }
 @MainActor
 private enum EditorActions {
+    static func reload(_ document: EditorDocument, workspace: EditorWorkspace) {
+        if document.isDirty {
+            let alert = NSAlert()
+            alert.messageText = "Discard changes and reload \(document.url.lastPathComponent)?"
+            alert.informativeText = "Unsaved edits will be replaced with the contents on disk."
+            alert.addButton(withTitle: "Reload"); alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        do { try workspace.reload(document, discardChanges: true) }
+        catch { workspace.error = error.localizedDescription }
+    }
     static func newFile(in directory: URL, workspace: EditorWorkspace) {
         let alert = NSAlert(); alert.messageText = "New file"; alert.informativeText = directory.path
         let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))

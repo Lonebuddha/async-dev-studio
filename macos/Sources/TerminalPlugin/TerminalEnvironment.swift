@@ -1,4 +1,5 @@
 import Darwin
+import xlocale
 import Foundation
 
 /// Terminal input and output use UTF-8. Shells must use the same encoding,

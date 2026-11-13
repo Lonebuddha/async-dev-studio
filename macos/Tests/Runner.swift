@@ -143,6 +143,8 @@ struct Runner {
             ("editor independent file tabs", { try editor.testTabsAndIndependentInstances() }),
             ("editor dirty state and save", { try editor.testDirtyStateAndSave() }),
             ("editor close decisions", { try editor.testSaveDiscardCancelOnClose() }),
+            ("editor refresh retains tabs and updates save baseline", { try editor.testRefreshFromDiskKeepsTabsAndUpdatesSaveBaseline() }),
+            ("editor failed refresh retains unsaved buffer", { try editor.testFailedRefreshKeepsUnsavedBuffer() }),
             ("editor external edit protection", { try editor.testExternalChangesAndReload() }),
             ("editor encoding and binary rejection", { try editor.testEncodingAndBinaryRejection() }),
             ("editor new files", { try editor.testCreateFileWithoutOverwriting() }),
@@ -155,6 +157,7 @@ struct Runner {
             tests.append(("WebKit and Keychain process restart", { try await BrowserIntegrationTests().testProfileSurvivesProcessRestart() }))
         }
         if ProcessInfo.processInfo.environment["STUDIO_EDITOR_NATIVE_TESTS"] == "1" {
+            tests.append(("native editor refresh updates visible text and undo", { try editor.testNativeRefreshReplacesVisibleTextAndClearsUndo() }))
             tests.append(("native editor undo and tabs", { try editor.testNativeEditingKeepsUndoSeparateAcrossTabs() }))
             tests.append(("native editor indentation and CRLF", { try editor.testNativeIndentationAndCRLF() }))
         }

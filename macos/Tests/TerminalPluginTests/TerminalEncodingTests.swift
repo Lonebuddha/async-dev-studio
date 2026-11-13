@@ -1,4 +1,5 @@
 import Darwin
+import xlocale
 import Foundation
 @testable import TerminalPlugin
 

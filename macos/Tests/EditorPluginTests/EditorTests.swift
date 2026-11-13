@@ -98,6 +98,69 @@ final class EditorTests {
             try expectEqual(doc.text, "external"); try expectFalse(doc.isDirty)
         }
     }
+    @MainActor func testRefreshFromDiskKeepsTabsAndUpdatesSaveBaseline() throws {
+        try fixture { root in
+            let url = try file("a.txt", "original", at: root)
+            let editor = try EditorWorkspace(folder: root)
+            let doc = try editor.openFile(url)
+            let other = try editor.openFile(file("b.txt", "other", at: root))
+            other.updateText("other edits")
+            editor.selectedID = doc.id
+            let disk = Data([0xff, 0xfe]) + "Updated 🌍".data(using: .utf16LittleEndian)!
+            try disk.write(to: url)
+            try editor.reload(doc, discardChanges: false)
+            try expectEqual(doc.text, "Updated 🌍")
+            try expectFalse(doc.isDirty)
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(editor.documents.map(\.id), [doc.id, other.id])
+            try expectEqual(other.text, "other edits")
+            try expectTrue(other.isDirty)
+            doc.updateText("Saved after refresh")
+            try editor.save(doc)
+            try expectEqual(try Data(contentsOf: url), Data([0xff, 0xfe]) + "Saved after refresh".data(using: .utf16LittleEndian)!)
+        }
+    }
+    @MainActor func testFailedRefreshKeepsUnsavedBuffer() throws {
+        try fixture { root in
+            let url = try file("a.txt", "original", at: root)
+            let editor = try EditorWorkspace(folder: root)
+            let doc = try editor.openFile(url)
+            doc.updateText("unsaved edits")
+            doc.selection = NSRange(location: 4, length: 2)
+            try Data([0, 1, 255]).write(to: url)
+            try expectThrows(try editor.reload(doc, discardChanges: true))
+            try expectEqual(doc.text, "unsaved edits")
+            try expectEqual(doc.savedText, "original")
+            try expectTrue(doc.isDirty)
+            try expectEqual(doc.selection, NSRange(location: 4, length: 2))
+            try FileManager.default.removeItem(at: url)
+            try expectThrows(try editor.reload(doc, discardChanges: true))
+            try expectEqual(doc.text, "unsaved edits")
+            try expectEqual(editor.selectedID, doc.id)
+        }
+    }
+    @MainActor func testNativeRefreshReplacesVisibleTextAndClearsUndo() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let url = try file("a.swift", "let original = 1", at: root)
+            let editor = try EditorWorkspace(folder: root)
+            let doc = try editor.openFile(url)
+            let surface = EditorTextSurface(document: doc)
+            doc.surface = surface
+            surface.textView.undoManager?.beginUndoGrouping()
+            surface.textView.insertText("local edit", replacementRange: NSRange(location: 0, length: 0))
+            surface.textView.undoManager?.endUndoGrouping()
+            try expectTrue(doc.isDirty)
+            try expectTrue(surface.textView.undoManager?.canUndo == true)
+            try Data("let disk = 2".utf8).write(to: url)
+            try editor.reload(doc, discardChanges: true)
+            try expectEqual(surface.textView.string, "let disk = 2")
+            try expectEqual(doc.text, "let disk = 2")
+            try expectFalse(doc.isDirty)
+            try expectFalse(surface.textView.undoManager?.canUndo == true)
+            try expectEqual(surface.textView.selectedRange(), NSRange(location: 0, length: 0))
+        }
+    }
     @MainActor func testEncodingAndBinaryRejection() throws {
         try fixture { root in
             let url = root.appendingPathComponent("utf16.txt")

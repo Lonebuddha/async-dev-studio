@@ -66,6 +66,7 @@ Click a file to open it. Reopening the same file selects its existing tab; files
 The native AppKit text control provides selection, copy/paste, undo/redo, and a find/replace bar. The editor adds monospaced text, line numbers, basic syntax coloring for common programming languages, four-space Tab insertion, automatic continuation of indentation, and a path/encoding/caret status bar. New lines preserve CRLF when the file uses it. Syntax coloring is deliberately approximate and is disabled above 100,000 characters.
 
 - **Save**: ⌘S. **Save All** in this instance: ⌥⌘S.
+- **Refresh from Disk**: click the document toolbar button or press ⌘R to reread the open file. Unsaved edits require confirmation before replacement; a read failure retains the current buffer.
 - **Find / Replace**: ⌘F; expand the native find bar to use replacement.
 - **Undo / Redo**: ⌘Z / ⇧⌘Z.
 - **Close the focused file**: ⌘W, or its tab’s close button.
