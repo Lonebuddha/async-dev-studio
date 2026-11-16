@@ -161,6 +161,7 @@ struct Runner {
         if ProcessInfo.processInfo.environment["STUDIO_EDITOR_NATIVE_TESTS"] == "1" {
             tests.append(("native editor refresh updates visible text and undo", { try editor.testNativeRefreshReplacesVisibleTextAndClearsUndo() }))
             tests.append(("native editor undo and tabs", { try editor.testNativeEditingKeepsUndoSeparateAcrossTabs() }))
+            tests.append(("native editor Home and End line navigation", { try editor.testNativeHomeAndEndMoveWithinCurrentLine() }))
             tests.append(("native editor indentation and CRLF", { try editor.testNativeIndentationAndCRLF() }))
         }
         if ProcessInfo.processInfo.environment["STUDIO_PICKER_NATIVE_TESTS"] == "1" {

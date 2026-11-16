@@ -68,6 +68,7 @@ The native AppKit text control provides selection, copy/paste, undo/redo, and a 
 - **Save**: ⌘S. **Save All** in this instance: ⌥⌘S.
 - **Refresh from Disk**: click the document toolbar button or press ⌘R to reread the open file. Unsaved edits require confirmation before replacement; a read failure retains the current buffer.
 - **Find / Replace**: ⌘F; expand the native find bar to use replacement.
+- **Home / End**: move the cursor to the beginning/end of the current line. Hold Shift to select to that boundary. On compact keyboards, use Fn-Left / Fn-Right.
 - **Undo / Redo**: ⌘Z / ⇧⌘Z.
 - **Close the focused file**: ⌘W, or its tab’s close button.
 - **New file**: the folder pane’s plus button, or a subfolder’s context menu. Existing files are never overwritten by creation.

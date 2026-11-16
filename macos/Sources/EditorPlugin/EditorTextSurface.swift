@@ -103,6 +103,24 @@ final class CodeTextView: NSTextView {
         }
         return super.performKeyEquivalent(with: event)
     }
+    override func keyDown(with event: NSEvent) {
+        // Home/End should move the caret within the line rather than scroll.
+        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            let selecting = event.modifierFlags.contains(.shift)
+            switch event.charactersIgnoringModifiers?.utf16.first {
+            case UInt16(NSHomeFunctionKey): // Home (also Fn-Left on compact keyboards)
+                if selecting { moveToBeginningOfLineAndModifySelection(nil) }
+                else { moveToBeginningOfLine(nil) }
+                return
+            case UInt16(NSEndFunctionKey): // End (also Fn-Right on compact keyboards)
+                if selecting { moveToEndOfLineAndModifySelection(nil) }
+                else { moveToEndOfLine(nil) }
+                return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let window { window.makeFirstResponder(self) }

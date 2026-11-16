@@ -288,6 +288,62 @@ final class EditorTests {
         }
     }
 
+    @MainActor func testNativeHomeAndEndMoveWithinCurrentLine() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            for (index, newline) in ["\n", "\r\n"].enumerated() {
+                let text = "first\(newline)    ab🌍cd\(newline)\(newline)last\(newline)"
+                let editor = try EditorWorkspace(folder: root)
+                let doc = try editor.openFile(file("keys\(index).txt", text, at: root))
+                let surface = EditorTextSurface(document: doc)
+                let view = surface.textView
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: true)
+                window.isReleasedWhenClosed = false
+                defer { window.close() }
+                window.contentView = surface
+                window.makeFirstResponder(view)
+                @MainActor func press(_ key: UInt16, shift: Bool = false) {
+                    var flags: NSEvent.ModifierFlags = [.function, .numericPad]
+                    if shift { flags.insert(.shift) }
+                    let character = String(UnicodeScalar(key == 115 || key == 123 ? NSHomeFunctionKey : NSEndFunctionKey)!)
+                    let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                        timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                        characters: character, charactersIgnoringModifiers: character, isARepeat: false, keyCode: key)!
+                    view.keyDown(with: event)
+                }
+                let line = (text as NSString).range(of: "    ab🌍cd")
+                let middle = line.location + 6
+                view.setSelectedRange(NSRange(location: middle, length: 0))
+                press(115)
+                try expectEqual(view.selectedRange(), NSRange(location: line.location, length: 0))
+                press(119)
+                try expectEqual(view.selectedRange(), NSRange(location: NSMaxRange(line), length: 0))
+                view.setSelectedRange(NSRange(location: middle, length: 0))
+                press(115, shift: true)
+                try expectEqual(view.selectedRange(), NSRange(location: line.location, length: middle - line.location))
+                view.setSelectedRange(NSRange(location: middle, length: 0))
+                press(119, shift: true)
+                try expectEqual(view.selectedRange(), NSRange(location: middle, length: NSMaxRange(line) - middle))
+                for position in [NSMaxRange(line) + (newline as NSString).length, (text as NSString).length] {
+                    view.setSelectedRange(NSRange(location: position, length: 0))
+                    press(115); press(119)
+                    try expectEqual(view.selectedRange(), NSRange(location: position, length: 0))
+                }
+                // Fn-arrow events can retain the physical arrow key codes.
+                view.setSelectedRange(NSRange(location: middle, length: 0))
+                press(123)
+                try expectEqual(view.selectedRange(), NSRange(location: line.location, length: 0))
+                press(124)
+                try expectEqual(view.selectedRange(), NSRange(location: NSMaxRange(line), length: 0))
+                view.setSelectedRange(NSRange(location: 0, length: 0))
+                press(115); press(119)
+                try expectEqual(view.selectedRange(), NSRange(location: 5, length: 0))
+                try expectEqual(doc.text, text)
+                try expectFalse(doc.isDirty)
+            }
+        }
+    }
+
     @MainActor func testNativeIndentationAndCRLF() throws {
         _ = NSApplication.shared
         try fixture { root in
