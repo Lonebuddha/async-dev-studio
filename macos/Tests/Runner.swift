@@ -177,6 +177,7 @@ struct Runner {
             tests.append(("WebKit and Keychain process restart", { try await BrowserIntegrationTests().testProfileSurvivesProcessRestart() }))
         }
         if ProcessInfo.processInfo.environment["STUDIO_EDITOR_NATIVE_TESTS"] == "1" {
+            tests.append(("native editor read-only PDF tabs and reload", { try editor.testNativePDFTabsAreReadOnlyAndReloadFromDisk() }))
             tests.append(("native Markdown PDF current buffer and replacement", { try editor.testNativeMarkdownPDFUsesCurrentBufferAndReplacesSibling() }))
             tests.append(("native Markdown PDF pagination and empty files", { try editor.testNativeMarkdownPDFPaginationAndEmptyDocuments() }))
             tests.append(("native Markdown PDF failures preserve files and buffer", { try editor.testNativeMarkdownPDFFailureKeepsFilesAndBuffer() }))

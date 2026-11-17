@@ -5,6 +5,38 @@ import PDFKit
 @testable import EditorPlugin
 
 final class EditorTests {
+    @MainActor func testNativePDFTabsAreReadOnlyAndReloadFromDisk() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let source = root.appendingPathComponent("Report.PDF")
+            let original = try MarkdownPDFRenderer.render("# Original report", title: "Report")
+            try original.write(to: source)
+            let editor = try EditorWorkspace(folder: root)
+            let document = try editor.openFile(source)
+            let text = try editor.openFile(file("notes.txt", "Notes", at: root))
+            try expectEqual(try editor.openFile(source).id, document.id)
+            try expectEqual(editor.documents.count, 2)
+            try expectTrue(document.pdf?.string?.contains("Original report") == true)
+            document.updateText("Attempted edit")
+            try editor.saveAll()
+            try expectFalse(document.isDirty)
+            try expectEqual(try Data(contentsOf: source), original)
+
+            let revised = try MarkdownPDFRenderer.render("# Revised report", title: "Report")
+            try revised.write(to: source, options: .atomic)
+            try editor.reload(document, discardChanges: false)
+            try expectTrue(document.pdf?.string?.contains("Revised report") == true)
+            try Data("Invalid PDF".utf8).write(to: source, options: .atomic)
+            try expectThrows(try editor.reload(document, discardChanges: false))
+            try expectTrue(document.pdf?.string?.contains("Revised report") == true)
+            try expectTrue(try editor.closeFile(document.id, decision: .cancel))
+            try expectEqual(editor.selectedID, text.id)
+            try expectThrows(try editor.openFile(source))
+            try expectThrows(try editor.createFile(name: "Blank.pdf", in: root))
+            try expectFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Blank.pdf").path))
+        }
+    }
+
     func testPDFExportReplacementAndContainment() throws {
         try fixture { root in
             let fs = try DiskEditorFileSystem(folder: root)
@@ -763,6 +795,7 @@ private final class FailingEditorFileSystem: EditorFileSystem {
     func canonicalFile(_ url: URL) throws -> URL { try base.canonicalFile(url) }
     func entries(in directory: URL) throws -> [EditorEntry] { try base.entries(in: directory) }
     func read(_ url: URL) throws -> Data { try base.read(url) }
+    func readPDF(_ url: URL) throws -> Data { try base.readPDF(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { throw CocoaError(.fileWriteNoPermission) }
     func writeExport(_ data: Data, to url: URL) throws { throw CocoaError(.fileWriteNoPermission) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
@@ -793,6 +826,7 @@ private final class MutationEditorFileSystem: EditorFileSystem {
         return try base.entries(in: directory)
     }
     func read(_ url: URL) throws -> Data { reads.append(url); return try base.read(url) }
+    func readPDF(_ url: URL) throws -> Data { try base.readPDF(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
     func writeExport(_ data: Data, to url: URL) throws { try base.writeExport(data, to: url) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }

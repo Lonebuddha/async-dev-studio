@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 
 public struct EditorPane: View {
@@ -31,9 +32,15 @@ public struct EditorPane: View {
                         Divider()
                     }
                     if let document = workspace.selectedDocument {
-                        EditorDocumentPane(workspace: workspace, document: document).id(document.id)
+                        Group {
+                            if document.pdf != nil {
+                                EditorPDFPane(workspace: workspace, document: document)
+                            } else {
+                                EditorDocumentPane(workspace: workspace, document: document)
+                            }
+                        }.id(document.id)
                     } else {
-                        Text("Select a file to edit").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text("Select a file to open").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }.frame(minWidth: 250, maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -117,7 +124,9 @@ private struct EditorFileTab: View {
         }.padding(8).background(workspace.selectedID == document.id ? Color.accentColor.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5)).help(document.url.path)
             .contextMenu {
-                Button("Save") { perform { try workspace.save(document) } }
+                if document.pdf == nil {
+                    Button("Save") { perform { try workspace.save(document) } }
+                }
                 Button("Reload from Disk…") { EditorActions.reload(document, workspace: workspace) }
                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([document.url]) }
                 Button("Close") { close() }
@@ -127,6 +136,44 @@ private struct EditorFileTab: View {
         perform { _ = try workspace.closeFile(document.id, decision: document.isDirty ? EditorRuntime.askToSave(document) : .discard) }
     }
     private func perform(_ action: () throws -> Void) { do { try action() } catch { workspace.error = error.localizedDescription } }
+}
+private struct EditorPDFPane: View {
+    let workspace: EditorWorkspace
+    @ObservedObject var document: EditorDocument
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Refresh from Disk", systemImage: "arrow.clockwise") {
+                    EditorActions.reload(document, workspace: workspace)
+                }.keyboardShortcut("r").help("Reload this document from disk (⌘R)")
+                Spacer()
+                Text("Read Only").foregroundStyle(.secondary)
+            }.padding(6)
+            EditorPDFView(document: document)
+            Divider()
+            Text(document.url.path).lineLimit(1).truncationMode(.middle)
+                .font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(5)
+        }
+    }
+}
+private struct EditorPDFView: NSViewRepresentable {
+    let document: EditorDocument
+
+    func makeNSView(context: Context) -> PDFView {
+        if let view = document.pdfView { return view }
+        let view = PDFView()
+        view.displayMode = .singlePageContinuous
+        document.pdfView = view
+        return view
+    }
+
+    func updateNSView(_ view: PDFView, context: Context) {
+        guard view.document !== document.pdf else { return }
+        view.document = document.pdf
+        view.autoScales = true
+    }
 }
 private struct EditorDocumentPane: View {
     @ObservedObject var workspace: EditorWorkspace

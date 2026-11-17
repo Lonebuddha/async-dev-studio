@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import PDFKit
 
 public enum EditorCloseDecision { case save, discard, cancel }
 
@@ -11,7 +12,9 @@ public final class EditorDocument: ObservableObject, Identifiable {
     @Published public private(set) var savedText: String
     @Published public var selection = NSRange(location: 0, length: 0)
     public var isDirty: Bool { text != savedText }
-    public var isMarkdown: Bool { ["md", "markdown"].contains(url.pathExtension.lowercased()) }
+    public var isMarkdown: Bool { pdf == nil && ["md", "markdown"].contains(url.pathExtension.lowercased()) }
+    @Published private(set) var pdf: PDFDocument?
+    var pdfView: PDFView?
     public var encodingName: String { format.label }
     var diskData: Data
     var format: TextEncoding
@@ -21,7 +24,19 @@ public final class EditorDocument: ObservableObject, Identifiable {
         let (text, format) = try TextEncoding.decode(data)
         self.url = url; self.text = text; savedText = text; diskData = data; self.format = format
     }
-    public func updateText(_ text: String) { if self.text != text { self.text = text } }
+    init(url: URL, pdf: PDFDocument) {
+        self.url = url
+        self.pdf = pdf
+        text = ""
+        savedText = ""
+        diskData = Data()
+        format = TextEncoding(encoding: .utf8, prefix: Data())
+    }
+    public func updateText(_ text: String) {
+        guard pdf == nil, self.text != text else { return }
+        self.text = text
+    }
+    func didReloadPDF(_ pdf: PDFDocument) { self.pdf = pdf }
     func didSave(_ data: Data) { diskData = data; savedText = text }
     func didMove(to url: URL) {
         self.url = url
@@ -88,12 +103,17 @@ public final class EditorWorkspace: ObservableObject {
     @discardableResult public func openFile(_ url: URL) throws -> EditorDocument {
         let canonical = try fileSystem.canonicalFile(url)
         if let document = documents.first(where: { $0.url == canonical }) { selectedID = document.id; return document }
-        let document = try EditorDocument(url: canonical, data: fileSystem.read(canonical))
+        let document: EditorDocument
+        if Self.isPDF(url) || Self.isPDF(canonical) {
+            document = try EditorDocument(url: canonical, pdf: readPDF(canonical))
+        } else {
+            document = try EditorDocument(url: canonical, data: fileSystem.read(canonical))
+        }
         documents.append(document); selectedID = document.id
         return document
     }
     public func save(_ document: EditorDocument) throws {
-        guard document.isDirty else { return }
+        guard document.pdf == nil, document.isDirty else { return }
         let data = try document.format.encode(document.text)
         guard data.count <= 10 * 1024 * 1024 else { throw EditorError.tooLarge }
         try fileSystem.write(data, to: document.url, replacing: document.diskData)
@@ -110,9 +130,28 @@ public final class EditorWorkspace: ObservableObject {
     }
     public func reload(_ document: EditorDocument, discardChanges: Bool) throws {
         guard !document.isDirty || discardChanges else { throw EditorError.unsavedChanges }
-        try document.didReload(fileSystem.read(document.url))
+        if document.pdf != nil {
+            try document.didReloadPDF(readPDF(document.url))
+        } else {
+            try document.didReload(fileSystem.read(document.url))
+        }
     }
+    private func readPDF(_ url: URL) throws -> PDFDocument {
+        let data = try fileSystem.readPDF(url)
+        guard let pdf = PDFDocument(data: data) else { throw EditorError.invalidPDF }
+        guard !pdf.isLocked else { throw EditorError.lockedPDF }
+        guard pdf.pageCount > 0 else { throw EditorError.invalidPDF }
+        for index in 0..<pdf.pageCount {
+            for annotation in pdf.page(at: index)?.annotations ?? [] where annotation.type == "Widget" {
+                annotation.isReadOnly = true
+            }
+        }
+        return pdf
+    }
+    private static func isPDF(_ url: URL) -> Bool { url.pathExtension.lowercased() == "pdf" }
+
     @discardableResult public func createFile(name: String, in directory: URL) throws -> EditorDocument {
+        guard !Self.isPDF(URL(fileURLWithPath: name)) else { throw EditorError.createPDF }
         let url = try fileSystem.create(name: name, in: directory)
         loadDirectory(directory)
         return try openFile(url)
