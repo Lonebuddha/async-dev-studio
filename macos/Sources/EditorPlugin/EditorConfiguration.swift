@@ -21,6 +21,7 @@ public struct EditorPlugin: AppPlugin {
 }
 public enum EditorError: Error, LocalizedError {
     case invalidFolder, outsideFolder, notText, tooLarge, changedOnDisk, unsavedChanges, invalidName, rootMutation
+    case notMarkdown, pdfConversionFailed
     public var errorDescription: String? {
         switch self {
         case .invalidFolder: return "Choose an existing, readable folder with an absolute path."
@@ -31,6 +32,8 @@ public enum EditorError: Error, LocalizedError {
         case .unsavedChanges: return "Save or explicitly discard unsaved changes before continuing."
         case .invalidName: return "Enter a file or folder name without slashes, not . or .. ."
         case .rootMutation: return "The editor’s configured root folder cannot be renamed or deleted here."
+        case .notMarkdown: return "Open a Markdown (.md or .markdown) file to convert it to PDF."
+        case .pdfConversionFailed: return "The Markdown document couldn’t be laid out as a PDF. Your source file and any existing PDF have been kept."
         }
     }
 }

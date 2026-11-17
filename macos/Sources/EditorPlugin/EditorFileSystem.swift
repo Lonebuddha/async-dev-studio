@@ -13,6 +13,7 @@ public protocol EditorFileSystem {
     func entries(in directory: URL) throws -> [EditorEntry]
     func read(_ url: URL) throws -> Data
     func write(_ data: Data, to url: URL, replacing expected: Data) throws
+    func writeExport(_ data: Data, to url: URL) throws
     func create(name: String, in directory: URL) throws -> URL
     func createFolder(name: String, in directory: URL) throws -> URL
     func rename(_ url: URL, to name: String) throws -> URL
@@ -81,6 +82,17 @@ public struct DiskEditorFileSystem: EditorFileSystem {
         let file = try canonicalFile(folder.appendingPathComponent(name))
         try Data().write(to: file, options: .withoutOverwriting)
         return file
+    }
+    public func writeExport(_ data: Data, to url: URL) throws {
+        let destination = try canonicalEntry(url)
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).pdf-export")
+        defer { try? manager.removeItem(at: temporary) }
+        try data.write(to: temporary, options: .withoutOverwriting)
+        // Atomic rename replaces an existing file or symlink itself, never its target.
+        // A directory or a failed write leaves the previous destination untouched.
+        guard Darwin.rename(temporary.path, destination.path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSFilePathErrorKey: destination.path])
+        }
     }
     public func createFolder(name: String, in directory: URL) throws -> URL {
         try validateName(name)

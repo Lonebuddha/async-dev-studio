@@ -11,6 +11,7 @@ public final class EditorDocument: ObservableObject, Identifiable {
     @Published public private(set) var savedText: String
     @Published public var selection = NSRange(location: 0, length: 0)
     public var isDirty: Bool { text != savedText }
+    public var isMarkdown: Bool { ["md", "markdown"].contains(url.pathExtension.lowercased()) }
     public var encodingName: String { format.label }
     var diskData: Data
     var format: TextEncoding
@@ -99,6 +100,14 @@ public final class EditorWorkspace: ObservableObject {
         document.didSave(data)
     }
     public func saveAll() throws { for document in documents { try save(document) } }
+    @discardableResult public func convertToPDF(_ document: EditorDocument) throws -> URL {
+        guard document.isMarkdown else { throw EditorError.notMarkdown }
+        let destination = document.url.deletingPathExtension().appendingPathExtension("pdf")
+        let data = try MarkdownPDFRenderer.render(document.text, title: document.url.deletingPathExtension().lastPathComponent)
+        try fileSystem.writeExport(data, to: destination)
+        loadDirectory(destination.deletingLastPathComponent())
+        return destination
+    }
     public func reload(_ document: EditorDocument, discardChanges: Bool) throws {
         guard !document.isDirty || discardChanges else { throw EditorError.unsavedChanges }
         try document.didReload(fileSystem.read(document.url))

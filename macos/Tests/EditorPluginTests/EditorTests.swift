@@ -1,9 +1,109 @@
 import Foundation
 import StudioKernel
 import AppKit
+import PDFKit
 @testable import EditorPlugin
 
 final class EditorTests {
+    func testPDFExportReplacementAndContainment() throws {
+        try fixture { root in
+            let fs = try DiskEditorFileSystem(folder: root)
+            let destination = root.appendingPathComponent("notes.pdf")
+            try fs.writeExport(Data("old".utf8), to: destination)
+            try fs.writeExport(Data("new".utf8), to: destination)
+            try expectEqual(try Data(contentsOf: destination), Data("new".utf8))
+            try fixture { outside in
+                let external = try file("external.pdf", "keep", at: outside)
+                try FileManager.default.removeItem(at: destination)
+                try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: external)
+                try fs.writeExport(Data("replacement".utf8), to: destination)
+                try expectEqual(try Data(contentsOf: destination), Data("replacement".utf8))
+                try expectEqual(try String(contentsOf: external, encoding: .utf8), "keep")
+                try expectThrows(try fs.writeExport(Data(), to: external))
+                let link = root.appendingPathComponent("outside")
+                try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+                try expectThrows(try fs.writeExport(Data(), to: link.appendingPathComponent("external.pdf")))
+            }
+            let directory = root.appendingPathComponent("folder.pdf", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            _ = try file("keep.txt", "keep", at: directory)
+            try expectThrows(try fs.writeExport(Data(), to: directory))
+            try expectEqual(try String(contentsOf: directory.appendingPathComponent("keep.txt"), encoding: .utf8), "keep")
+            try expectFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains { $0.hasSuffix(".pdf-export") })
+        }
+    }
+    @MainActor func testNativeMarkdownPDFUsesCurrentBufferAndReplacesSibling() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let folder = root.appendingPathComponent("notes", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            let source = try file("release.notes.MD", "# Original", at: folder)
+            let destination = try file("release.notes.pdf", "old PDF", at: folder)
+            let editor = try EditorWorkspace(folder: root)
+            editor.setDirectoryExpanded(try editor.fileSystem.canonicalFile(folder), expanded: true)
+            let document = try editor.openFile(source)
+            document.updateText("# Current draft\n\nA **bold** and *italic* paragraph with `code`.\n\n- First item\n- Second item\n\n```swift\nlet answer = 42\n```\n\n| Name | Value |\n| --- | ---: |\n| Export | Ready |")
+            document.selection = NSRange(location: 3, length: 2)
+            let exported = try editor.convertToPDF(document)
+            try expectEqual(exported.path, try editor.fileSystem.canonicalFile(destination).path)
+            let pdf = PDFDocument(url: exported)
+            try expectNotNil(pdf)
+            let text = pdf?.string ?? ""
+            for expected in ["Current draft", "bold", "italic", "First item", "Second item", "let answer = 42", "Name", "Export", "Ready"] {
+                try expectTrue(text.contains(expected))
+            }
+            try expectFalse(text.contains("# Current draft"))
+            try expectFalse(text.contains("**bold**"))
+            try expectFalse(text.contains("Original"))
+            try expectEqual(try String(contentsOf: source, encoding: .utf8), "# Original")
+            try expectTrue(document.isDirty)
+            try expectEqual(document.savedText, "# Original")
+            try expectEqual(document.selection, NSRange(location: 3, length: 2))
+            try expectEqual(editor.selectedID, document.id)
+            try expectEqual(editor.documents.count, 1)
+            try expectTrue(editor.listing[document.url.deletingLastPathComponent()]?.contains { $0.name == "release.notes.pdf" } == true)
+            document.updateText("# Replacement draft")
+            _ = try editor.convertToPDF(document)
+            try expectTrue(PDFDocument(url: exported)?.string?.contains("Replacement draft") == true)
+            try expectFalse(PDFDocument(url: exported)?.string?.contains("Current draft") == true)
+        }
+    }
+    @MainActor func testNativeMarkdownPDFPaginationAndEmptyDocuments() throws {
+        _ = NSApplication.shared
+        let paragraphs = (1...100).map { "## Section \($0)\n\nParagraph \($0): A long document must keep its full text across page boundaries, including this paragraph’s final words." }
+        let data = try MarkdownPDFRenderer.render("# Long document\n\n" + paragraphs.joined(separator: "\n\n") + "\n\nFinal sentinel", title: "Long document")
+        let pdf = PDFDocument(data: data)
+        try expectTrue((pdf?.pageCount ?? 0) > 1)
+        let text = pdf?.string ?? ""
+        for index in 1...100 {
+            try expectTrue(text.contains("Paragraph \(index):"))
+            let headingPage = (0..<(pdf?.pageCount ?? 0)).compactMap { pdf?.page(at: $0)?.string }
+                .first { $0.components(separatedBy: .newlines).contains("Section \(index)") }
+            try expectTrue(headingPage?.contains("Paragraph \(index):") == true)
+        }
+        try expectTrue(text.contains("Final sentinel"))
+        let empty = PDFDocument(data: try MarkdownPDFRenderer.render("", title: "Empty"))
+        try expectEqual(empty?.pageCount, 1)
+    }
+    @MainActor func testNativeMarkdownPDFFailureKeepsFilesAndBuffer() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let source = try file("notes.md", "# Saved", at: root)
+            let destination = try file("notes.pdf", "existing PDF", at: root)
+            let editor = try EditorWorkspace(fileSystem: FailingEditorFileSystem(base: DiskEditorFileSystem(folder: root)))
+            let document = try editor.openFile(source)
+            document.updateText("# Unsaved")
+            try expectThrows(try editor.convertToPDF(document))
+            try expectEqual(try String(contentsOf: destination, encoding: .utf8), "existing PDF")
+            try expectEqual(try String(contentsOf: source, encoding: .utf8), "# Saved")
+            try expectEqual(document.text, "# Unsaved")
+            try expectTrue(document.isDirty)
+            let plain = try editor.openFile(file("plain.txt", "text", at: root))
+            try expectFalse(plain.isMarkdown)
+            try expectThrows(try editor.convertToPDF(plain))
+            try expectFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("plain.pdf").path))
+        }
+    }
     private func fixture(_ test: (URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -664,6 +764,7 @@ private final class FailingEditorFileSystem: EditorFileSystem {
     func entries(in directory: URL) throws -> [EditorEntry] { try base.entries(in: directory) }
     func read(_ url: URL) throws -> Data { try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { throw CocoaError(.fileWriteNoPermission) }
+    func writeExport(_ data: Data, to url: URL) throws { throw CocoaError(.fileWriteNoPermission) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
     func createFolder(name: String, in directory: URL) throws -> URL { try base.createFolder(name: name, in: directory) }
     func rename(_ url: URL, to name: String) throws -> URL { try base.rename(url, to: name) }
@@ -693,6 +794,7 @@ private final class MutationEditorFileSystem: EditorFileSystem {
     }
     func read(_ url: URL) throws -> Data { reads.append(url); return try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
+    func writeExport(_ data: Data, to url: URL) throws { try base.writeExport(data, to: url) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
     func createFolder(name: String, in directory: URL) throws -> URL {
         if failMutation { throw CocoaError(.fileWriteNoPermission) }

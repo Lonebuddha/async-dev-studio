@@ -167,6 +167,7 @@ struct Runner {
             ("editor new folder tree visibility and open buffers", { try editor.testCreateFolderRevealsParentAndKeepsOpenDocuments() }),
             ("editor failed folder creation retains state", { try editor.testFailedFolderCreationKeepsWorkspace() }),
             ("editor new files", { try editor.testCreateFileWithoutOverwriting() }),
+            ("editor PDF replacement and filesystem boundaries", { try editor.testPDFExportReplacementAndContainment() }),
             ("editor save failures", { try editor.testSaveFailureKeepsDirtyTab() }),
             ("editor executable permissions", { try editor.testSavePreservesExecutablePermissions() }),
             ("editor cancelled workspace close", { try editor.testCancelledWorkspaceCloseKeepsDocuments() })
@@ -176,6 +177,9 @@ struct Runner {
             tests.append(("WebKit and Keychain process restart", { try await BrowserIntegrationTests().testProfileSurvivesProcessRestart() }))
         }
         if ProcessInfo.processInfo.environment["STUDIO_EDITOR_NATIVE_TESTS"] == "1" {
+            tests.append(("native Markdown PDF current buffer and replacement", { try editor.testNativeMarkdownPDFUsesCurrentBufferAndReplacesSibling() }))
+            tests.append(("native Markdown PDF pagination and empty files", { try editor.testNativeMarkdownPDFPaginationAndEmptyDocuments() }))
+            tests.append(("native Markdown PDF failures preserve files and buffer", { try editor.testNativeMarkdownPDFFailureKeepsFilesAndBuffer() }))
             tests.append(("native editor rename preserves undo and caret", { try editor.testNativeRenamePreservesSurfaceUndoAndCaret() }))
             tests.append(("native editor refresh updates visible text and undo", { try editor.testNativeRefreshReplacesVisibleTextAndClearsUndo() }))
             tests.append(("native editor undo and tabs", { try editor.testNativeEditingKeepsUndoSeparateAcrossTabs() }))

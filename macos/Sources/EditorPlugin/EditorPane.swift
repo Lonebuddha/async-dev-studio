@@ -131,6 +131,7 @@ private struct EditorFileTab: View {
 private struct EditorDocumentPane: View {
     @ObservedObject var workspace: EditorWorkspace
     @ObservedObject var document: EditorDocument
+    @State private var exportedPDF: URL?
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -145,6 +146,11 @@ private struct EditorDocumentPane: View {
                     let item = NSMenuItem(); item.tag = NSTextFinder.Action.showFindInterface.rawValue
                     surface.textView.performFindPanelAction(item)
                 }.keyboardShortcut("f")
+                if document.isMarkdown {
+                    Button("Convert to PDF", systemImage: "doc.richtext") {
+                        perform { exportedPDF = try workspace.convertToPDF(document) }
+                    }.help("Export the current text beside this Markdown file. Replaces an existing PDF with the same name.")
+                }
                 Spacer()
             }.padding(6)
             EditorTextView(workspace: workspace, document: document)
@@ -152,9 +158,14 @@ private struct EditorDocumentPane: View {
             HStack {
                 Text(document.url.path).lineLimit(1).truncationMode(.middle)
                 Spacer()
+                if let exportedPDF {
+                    Text("PDF saved").help(exportedPDF.path)
+                }
                 Text(position); Text(document.encodingName); Text(document.isDirty ? "Modified" : "Saved")
             }.font(.caption).foregroundStyle(.secondary).padding(5)
         }
+        .onChange(of: document.text) { exportedPDF = nil }
+        .onChange(of: document.url) { exportedPDF = nil }
     }
     private var position: String {
         let text = document.text as NSString

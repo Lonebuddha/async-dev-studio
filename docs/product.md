@@ -85,6 +85,8 @@ Each text editor instance is configured with a folder. Inside its instance tab, 
 
 The basic editor supports plain-text editing, save/save all, undo/redo, find/replace, indentation, line numbers, and basic syntax coloring. Modified file tabs are visibly marked. Closing a file or instance, changing its folder, deleting its definition, or quitting resolves unsaved changes through save/discard/cancel. A failed save keeps the buffer open. External file changes must not be silently overwritten, and deleting an instance never deletes its source files.
 
+Markdown files (`.md` or `.markdown`, case insensitive) have a **Convert to PDF** toolbar button. It exports the current buffer, including unsaved edits, to a paginated A4 PDF in the same folder: `notes.md` becomes `notes.pdf`. An existing PDF is replaced atomically without confirmation. The Markdown file, dirty state, and selection remain unchanged; the tree refreshes and the footer confirms **PDF saved**. Headings, emphasis, lists, code, quotes, and tables are formatted using native frameworks. Images use their alt text; remote resources are not fetched. Export failures preserve the previous PDF and report an editor error.
+
 ## Instance and tab lifecycle
 
 An instance definition exists independently of its tab. Creating it stores configuration; opening it starts a session on demand. A terminal's ordered initialization commands run once for each newly started session, with app-defined completion and failure rules. Changing tab focus never reruns initialization.
