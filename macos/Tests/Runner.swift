@@ -176,6 +176,8 @@ struct Runner {
             tests.append(("Codex shared terminal runtime and resume", { try await CodexTests().testSessionIsolationAndRestart(nativeRuntime: true) }))
             tests.append(("Claude shared terminal lifecycle and reconfiguration", { try await ClaudeTests().testSharedRuntimeRestartsAndConfigurationChanges() }))
             let selection = TerminalSelectionTests()
+            tests.append(("terminal Home and End inherited line navigation", { try selection.testHomeAndEndAreInheritedByAllTerminalPlugins() }))
+            tests.append(("terminal Home and End edit real shell lines", { try await selection.testHomeAndEndEditRealShellCommandLines() }))
             tests.append(("terminal Cyrillic text and composed input inheritance", { try selection.testCyrillicTextInputAcrossTerminalPlugins() }))
             tests.append(("terminal inherited scrollback and application wheel events", { try selection.testWheelScrollingIsInheritedByAllTerminalPlugins() }))
             tests.append(("terminal click restores keyboard focus", { try selection.testClickRestoresKeyboardFocus() }))

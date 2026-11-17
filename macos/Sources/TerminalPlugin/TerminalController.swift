@@ -66,6 +66,24 @@ public final class TerminalController: NSObject, ObservableObject, TerminalViewD
 /// Handle Copy before SwiftTerm's keyDown clears the selected text. SwiftUI's
 /// menu routing does not always consume AppKit terminal keyboard equivalents.
 final class StudioTerminalView: TerminalView {
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+           let key = event.charactersIgnoringModifiers?.utf16.first,
+           key == UInt16(NSHomeFunctionKey) || key == UInt16(NSEndFunctionKey) {
+            selectNone()
+            let home = key == UInt16(NSHomeFunctionKey)
+            if terminal.isCurrentBufferAlternate {
+                // Full-screen applications interpret their own Home/End sequences.
+                doCommand(by: home ? #selector(moveToBeginningOfLine(_:)) : #selector(moveToEndOfLine(_:)))
+            } else {
+                // Shell editors understand Ctrl-A/Ctrl-E without Home/End bindings.
+                send(txt: home ? "\u{01}" : "\u{05}")
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
         // AppKit input methods can commit attributed text as well as strings.
         // Both must take the same UTF-8 path to the PTY.

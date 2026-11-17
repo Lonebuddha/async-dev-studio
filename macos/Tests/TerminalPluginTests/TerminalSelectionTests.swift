@@ -58,6 +58,89 @@ final class TerminalSelectionTests {
             }
         }
     }
+    func testHomeAndEndAreInheritedByAllTerminalPlugins() throws {
+        _ = NSApplication.shared
+        for plugin: TerminalAppPlugin in [TerminalPlugin(), ClaudePlugin(), CodexPlugin()] {
+            let instance = AppInstance(appTypeID: plugin.descriptor.id, name: "Line navigation",
+                configuration: try plugin.configurationData(shell: "/bin/sh", workingDirectory: "/tmp", startupCommands: []))
+            let view = try plugin.makeController(for: instance).view
+            let probe = WheelProbe(); view.terminalDelegate = probe
+            lines(1...100, to: view)
+            let bottom = view.terminal.buffer.yDisp
+            for applicationCursor in [false, true] {
+                feed(applicationCursor ? "\u{1b}[?1h" : "\u{1b}[?1l", to: view)
+                for (keyCode, home) in [(UInt16(115), true), (119, false), (123, true), (124, false)] {
+                    probe.output = ""
+                    view.selectAll(nil)
+                    pressLineBoundary(home: home, keyCode: keyCode, in: view)
+                    try expectEqual(probe.output, home ? "\u{01}" : "\u{05}")
+                    try expectFalse(view.selectionActive)
+                    try expectEqual(view.terminal.buffer.yDisp, bottom)
+                }
+                feed("\u{1b}[?1049h", to: view)
+                for home in [true, false] {
+                    probe.output = ""
+                    pressLineBoundary(home: home, keyCode: home ? 115 : 119, in: view)
+                    let prefix = applicationCursor ? "\u{1b}O" : "\u{1b}["
+                    try expectEqual(probe.output, prefix + (home ? "H" : "F"))
+                }
+                feed("\u{1b}[?1049l", to: view)
+            }
+        }
+    }
+
+    func testHomeAndEndEditRealShellCommandLines() async throws {
+        _ = NSApplication.shared
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // Isolate shell initialization and history from the user's real configuration.
+        try Data().write(to: folder.appendingPathComponent("inputrc"))
+        let environment = ["HOME": folder.path, "ZDOTDIR": folder.path, "INPUTRC": folder.appendingPathComponent("inputrc").path,
+                           "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        for (shell, setup) in [("/bin/zsh", "bindkey -e"), ("/bin/bash", "set -o emacs")] {
+            let marker = folder.appendingPathComponent("ready")
+            try? FileManager.default.removeItem(at: marker)
+            let session = TerminalSession(configuration: TerminalConfiguration(shell: shell, workingDirectory: folder.path,
+                startupCommands: [setup, "printf ready > ready"]), environment: environment)
+            let view = StudioTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+            let probe = WheelProbe(); view.terminalDelegate = probe
+            probe.onSend = { session.send(Data($0)) }
+            session.onOutput = { [weak view] data in view?.feed(byteArray: Array(data)[...]) }
+            defer { session.stop() }
+            try session.start()
+            try await waitForShell { FileManager.default.fileExists(atPath: marker.path) }
+            // Home must put the opening quote before the text; End must append
+            // the closing quote. Wrong cursor movement produces a different file.
+            view.insertText("middle", replacementRange: NSRange(location: NSNotFound, length: 0))
+            pressLineBoundary(home: true, keyCode: 115, in: view)
+            view.insertText("printf '%s' 'START ", replacementRange: NSRange(location: NSNotFound, length: 0))
+            pressLineBoundary(home: false, keyCode: 119, in: view)
+            view.insertText(" END' > result; exit\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await waitForShell { session.processID == nil }
+            try expectEqual(session.state, .exited(0))
+            let result = folder.appendingPathComponent("result")
+            try expectEqual(try String(contentsOf: result, encoding: .utf8), "START middle END")
+            try FileManager.default.removeItem(at: result)
+        }
+    }
+
+    private func pressLineBoundary(home: Bool, keyCode: UInt16, in view: TerminalView) {
+        let character = String(UnicodeScalar(home ? NSHomeFunctionKey : NSEndFunctionKey)!)
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad],
+            timestamp: 0, windowNumber: 0, context: nil, characters: character, charactersIgnoringModifiers: character,
+            isARepeat: false, keyCode: keyCode)!
+        view.keyDown(with: event)
+    }
+
+    private func waitForShell(_ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(10)
+        while !condition() {
+            guard Date() < deadline else { throw NSError(domain: "TerminalLineNavigationTimeout", code: 1) }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
     func testCyrillicTextInputAcrossTerminalPlugins() throws {
         _ = NSApplication.shared
         for plugin: TerminalAppPlugin in [TerminalPlugin(), ClaudePlugin(), CodexPlugin()] {
@@ -184,7 +267,11 @@ final class TerminalSelectionTests {
 
 private final class WheelProbe: TerminalViewDelegate {
     var output = ""
-    func send(source: TerminalView, data: ArraySlice<UInt8>) { output += String(decoding: data, as: UTF8.self) }
+    var onSend: ((ArraySlice<UInt8>) -> Void)?
+    func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        output += String(decoding: data, as: UTF8.self)
+        onSend?(data)
+    }
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: TerminalView, title: String) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}

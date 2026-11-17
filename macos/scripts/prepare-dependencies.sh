@@ -50,6 +50,9 @@ def change(path, original, corrected):
 root = path.parents[0]
 mac = root / 'Mac/MacTerminalView.swift'
 apple = root / 'Apple/AppleTerminalView.swift'
+# Expose the shared keyboard hook so the app can map Home/End per terminal mode.
+change(mac, '    public override func keyDown(with event: NSEvent) {',
+       '    open override func keyDown(with event: NSEvent) {')
 # Shared wheel handling: native scrollback, mouse reporting, and Shift bypass.
 change(mac, '''    public override func scrollWheel(with event: NSEvent) {
         if event.deltaY == 0 {

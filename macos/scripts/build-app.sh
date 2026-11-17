@@ -30,6 +30,12 @@ cp -f "$macos_root/ThirdParty/SwiftTerm-LICENSE.txt" "$app_path/Contents/Resourc
 /usr/bin/ditto "$binary_directory/AsyncDevStudioMacOS_TeamsPlugin.bundle" "$app_path/Contents/Resources/AsyncDevStudioMacOS_TeamsPlugin.bundle"
 cp -f "$macos_root/ThirdParty/Teams-icon-source.txt" "$app_path/Contents/Resources/Teams-icon-source.txt"
 codesign --force --sign - "$app_path"
+codesign --verify --deep --strict "$app_path"
+# Prepare a testable bundle without replacing an application that is still running.
+if [ "${STUDIO_INSTALL_APP:-1}" = 0 ]; then
+    printf '%s\n' "$app_path"
+    exit 0
+fi
 # Prepare the complete bundle before replacing the installed application.
 applications_directory="$HOME/Applications"
 installed_app="$applications_directory/Async Dev Studio.app"

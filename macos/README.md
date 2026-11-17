@@ -13,6 +13,8 @@ Each terminal has its own PTY, shell process, emulator, and scrollback. Open mul
 
 **Configure…** in an instance's context menu changes its name and parameters; parameter changes apply on the next shell start. **Stop…** is available from the tab's context menu. A stopped or exited shell has a **Start** button. Closing a running tab asks before stopping the shell and its foreground commands, while retaining the definition. **Delete…** removes the definition after confirmation. Quitting asks before stopping running sessions and waits for shutdown.
 
+**Home / End** move to the beginning/end of shell input using Ctrl-A / Ctrl-E (standard Emacs shell bindings); Fn-Left / Fn-Right work on compact keyboards. Full-screen applications using the alternate screen receive their normal Home/End sequences. Terminal, Claude, and Codex share this handling.
+
 The default shell is `/bin/zsh`, and the default directory is the user's home directory. `/bin/bash` and `/bin/sh` are also supported. Custom shells must accept POSIX-style startup syntax and the `-i` and `-l` options. Startup commands are entered one per line and queued as one compound command for the interactive login shell to read after its normal startup files. They run once per fresh shell start in that same shell, preserving activated environments, local variables, functions, and directory changes. A failed command ends the session; long-running commands should be last. Use `export` for environment values that child processes need to inherit.
 
 Project and app instance names are trimmed, nonempty, and unique without regard to case within their respective scope. Configuration uses absolute paths; the form includes a native directory picker. The project itself has only a name, not a working directory.
@@ -97,6 +99,8 @@ From the repository directory:
 ./macos/scripts/build-app.sh
 open "$HOME/Applications/Async Dev Studio.app"
 ```
+
+To build without replacing the installed app, use `STUDIO_INSTALL_APP=0 ./macos/scripts/build-app.sh`. Quit the running app before installing an update: replacing its bundle while it runs can break Keychain access.
 
 Apple Command Line Tools with Swift 5.10 or later are sufficient. Full Xcode is optional; open `macos/Package.swift` to work on the package there. The first build downloads pinned Swift packages, so it requires GitHub access. Subsequent builds use cached dependencies.
 
