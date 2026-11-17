@@ -20,7 +20,7 @@ public struct EditorPlugin: AppPlugin {
     public func validate(configuration: Data) throws { try EditorConfiguration.decode(configuration).validate() }
 }
 public enum EditorError: Error, LocalizedError {
-    case invalidFolder, outsideFolder, notText, tooLarge, changedOnDisk, unsavedChanges, invalidName
+    case invalidFolder, outsideFolder, notText, tooLarge, changedOnDisk, unsavedChanges, invalidName, rootMutation
     public var errorDescription: String? {
         switch self {
         case .invalidFolder: return "Choose an existing, readable folder with an absolute path."
@@ -28,8 +28,9 @@ public enum EditorError: Error, LocalizedError {
         case .notText: return "This file isn’t supported text. Use UTF-8 or UTF-16 with a byte-order mark."
         case .tooLarge: return "This basic editor supports files up to 10 MB."
         case .changedOnDisk: return "The file changed or was removed on disk. Your edits are still open. Compare with the disk version, or reload to discard your edits."
-        case .unsavedChanges: return "Save or discard the file’s changes before reloading."
+        case .unsavedChanges: return "Save or explicitly discard unsaved changes before continuing."
         case .invalidName: return "Enter a file name without slashes, not . or .. ."
+        case .rootMutation: return "The editor’s configured root folder cannot be renamed or deleted here."
         }
     }
 }

@@ -56,6 +56,7 @@ private struct EditorDirectoryRows: View {
                 } label: {
                     Label(entry.name, systemImage: "doc.text").lineLimit(1).help(entry.url.path)
                 }.buttonStyle(.plain)
+                    .contextMenu { EditorEntryMenu(workspace: workspace, entry: entry) }
             }
         }
     }
@@ -74,7 +75,24 @@ private struct EditorFolderRow: View {
             EditorDirectoryRows(workspace: workspace, directory: entry.url)
         } label: {
             Label(entry.name, systemImage: "folder").lineLimit(1)
-                .contextMenu { Button("New File…") { EditorActions.newFile(in: entry.url, workspace: workspace) } }
+                .contextMenu {
+                    Button("New File…") { EditorActions.newFile(in: entry.url, workspace: workspace) }
+                    Divider()
+                    EditorEntryMenu(workspace: workspace, entry: entry)
+                }
+        }
+    }
+}
+private struct EditorEntryMenu: View {
+    let workspace: EditorWorkspace
+    let entry: EditorEntry
+    var body: some View {
+        Button("Rename…") { EditorActions.rename(entry, workspace: workspace) }
+        Button("Delete…", role: .destructive) { EditorActions.delete(entry, workspace: workspace) }
+        Divider()
+        Button("Copy Name") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(entry.name, forType: .string)
         }
     }
 }
@@ -147,6 +165,38 @@ private struct EditorDocumentPane: View {
 }
 @MainActor
 private enum EditorActions {
+    static func rename(_ entry: EditorEntry, workspace: EditorWorkspace) {
+        let alert = NSAlert()
+        alert.messageText = "Rename \(entry.name)"
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        name.stringValue = entry.name
+        alert.accessoryView = name
+        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = name
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do { try workspace.rename(entry.url, to: name.stringValue) }
+        catch { workspace.error = error.localizedDescription }
+    }
+    static func delete(_ entry: EditorEntry, workspace: EditorWorkspace) {
+        do {
+            let dirty = try workspace.documents(inside: entry.url).filter(\.isDirty)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Move \(entry.name) to the Trash?"
+            alert.informativeText = entry.isDirectory
+                ? "This folder and all its contents will be moved to the Trash. Open documents inside it will close."
+                : "This item will be moved to the Trash and its open document will close."
+            if !dirty.isEmpty {
+                alert.informativeText += "\nUnsaved edits in \(dirty.count) open document(s) will be discarded."
+            }
+            alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
+            // Return should choose the safe option; deleting requires an explicit click.
+            alert.buttons[0].keyEquivalent = ""
+            alert.buttons[1].keyEquivalent = "\r"
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            try workspace.delete(entry.url, discardChanges: true)
+        } catch { workspace.error = error.localizedDescription }
+    }
     static func reload(_ document: EditorDocument, workspace: EditorWorkspace) {
         if document.isDirty {
             let alert = NSAlert()

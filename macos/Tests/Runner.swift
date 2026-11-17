@@ -143,6 +143,11 @@ struct Runner {
             ("editor independent file tabs", { try editor.testTabsAndIndependentInstances() }),
             ("editor directory expansion across collapse and refresh", { try editor.testDirectoryExpansionSurvivesCollapseAndRefresh() }),
             ("editor directory expansion retained per instance", { try editor.testDirectoryExpansionIsRetainedPerEditorInstance() }),
+            ("editor rename validation and collision protection", { try editor.testRenameValidatesNamesAndDoesNotOverwrite() }),
+            ("editor symlink entry mutation boundaries", { try editor.testMutatingSymlinkAffectsLinkAndRejectsOutsideParents() }),
+            ("editor folder rename retains buffers and tree", { try editor.testFolderRenameKeepsOpenBuffersAndExpandedTree() }),
+            ("editor delete confirmation and affected tabs", { try editor.testDeleteRequiresDiscardAndClosesOnlyAffectedTabs() }),
+            ("editor mutation failures retain workspace", { try editor.testFailedRenameAndTrashPreserveWorkspace() }),
             ("editor dirty state and save", { try editor.testDirtyStateAndSave() }),
             ("editor close decisions", { try editor.testSaveDiscardCancelOnClose() }),
             ("editor refresh retains tabs and updates save baseline", { try editor.testRefreshFromDiskKeepsTabsAndUpdatesSaveBaseline() }),
@@ -159,6 +164,7 @@ struct Runner {
             tests.append(("WebKit and Keychain process restart", { try await BrowserIntegrationTests().testProfileSurvivesProcessRestart() }))
         }
         if ProcessInfo.processInfo.environment["STUDIO_EDITOR_NATIVE_TESTS"] == "1" {
+            tests.append(("native editor rename preserves undo and caret", { try editor.testNativeRenamePreservesSurfaceUndoAndCaret() }))
             tests.append(("native editor refresh updates visible text and undo", { try editor.testNativeRefreshReplacesVisibleTextAndClearsUndo() }))
             tests.append(("native editor undo and tabs", { try editor.testNativeEditingKeepsUndoSeparateAcrossTabs() }))
             tests.append(("native editor Home and End line navigation", { try editor.testNativeHomeAndEndMoveWithinCurrentLine() }))

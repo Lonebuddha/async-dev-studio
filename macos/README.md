@@ -75,13 +75,14 @@ The native AppKit text control provides selection, copy/paste, undo/redo, and a 
 - **Close the focused file**: ⌘W, or its tab’s close button.
 - **New file**: the folder pane’s plus button, or a subfolder’s context menu. Existing files are never overwritten by creation.
 - **Reload from Disk** and **Reveal in Finder**: a file tab’s context menu.
+- **Tree context menu**: right-click a file or folder name for **Rename…**, **Delete…**, and **Copy Name** (including the extension). Rename preserves open buffers, undo history, and expanded folders. Delete asks for confirmation, moves the item and its contents to Trash, and closes affected tabs; the confirmation warns before discarding unsaved edits.
 - **Refresh files**: the folder pane’s refresh button. Directory contents load when expanded; hidden files are included.
 
 Closing a dirty file, closing/deleting an editor instance, changing its folder, or quitting asks **Save / Don’t Save / Cancel** for each modified file. A cancellation keeps the remaining buffers open; a save error keeps the edited text and blocks the close. Cancelling a later prompt does not discard files from earlier prompts. Files already saved stay saved. Renaming an instance keeps its open files; changing its folder closes its current runtime after approval. Deleting an editor definition never deletes its folder or source files.
 
 UTF-8 (with or without BOM) and UTF-16 with a little/big-endian BOM are supported, with the original encoding preserved. Binary and unsupported encodings are rejected without opening an editable buffer. Files are limited to 10 MB. Saving compares the current disk bytes with the version originally loaded, rejects external changes/removals, then writes atomically and preserves Unix permissions. On a conflict, the local buffer remains available to copy/compare; **Reload from Disk** explicitly discards it after confirmation. Changes made by another editor instance use the same conflict check.
 
-The instance’s name and folder are persisted in workspace metadata. Open files, unsaved buffers, undo history, and the editor’s pane/tab layout last for the running application session. There is no crash recovery or background autosave. The file tree refreshes manually; external file content changes require reload. Symlinks resolving outside the configured folder cannot be opened, and symlink directories are not traversed. File/folder rename/delete, language servers, completion, multi-cursor editing, and Sublime packages are outside this basic editor.
+The instance’s name and folder are persisted in workspace metadata. Open files, unsaved buffers, undo history, and the editor’s pane/tab layout last for the running application session. There is no crash recovery or background autosave. The file tree refreshes manually; external file content changes require reload. Symlinks resolving outside the configured folder cannot be opened, and symlink directories are not traversed. Language servers, completion, multi-cursor editing, and Sublime packages are outside this basic editor.
 
 ## Image viewer instances
 

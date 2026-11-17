@@ -56,6 +56,10 @@ final class EditorTextSurface: NSScrollView, NSTextViewDelegate {
         document?.selection = NSRange(location: 0, length: 0)
         highlight(); verticalRulerView?.needsDisplay = true
     }
+    func refreshFileMetadata() {
+        textView.setAccessibilityLabel(document?.url.lastPathComponent)
+        highlight()
+    }
     nonisolated func textDidChange(_ notification: Notification) {
         MainActor.assumeIsolated {
             document?.updateText(textView.string)

@@ -6,7 +6,7 @@ public enum EditorCloseDecision { case save, discard, cancel }
 @MainActor
 public final class EditorDocument: ObservableObject, Identifiable {
     public let id = UUID()
-    public let url: URL
+    @Published public private(set) var url: URL
     @Published public private(set) var text: String
     @Published public private(set) var savedText: String
     @Published public var selection = NSRange(location: 0, length: 0)
@@ -22,6 +22,10 @@ public final class EditorDocument: ObservableObject, Identifiable {
     }
     public func updateText(_ text: String) { if self.text != text { self.text = text } }
     func didSave(_ data: Data) { diskData = data; savedText = text }
+    func didMove(to url: URL) {
+        self.url = url
+        surface?.refreshFileMetadata()
+    }
     func didReload(_ data: Data) throws {
         let (text, format) = try TextEncoding.decode(data)
         self.format = format; diskData = data; savedText = text; self.text = text
@@ -83,6 +87,44 @@ public final class EditorWorkspace: ObservableObject {
         let url = try fileSystem.create(name: name, in: directory)
         loadDirectory(directory)
         return try openFile(url)
+    }
+    public func documents(inside url: URL) throws -> [EditorDocument] {
+        let entry = try fileSystem.canonicalEntry(url)
+        return documents.filter { Self.contains($0.url, in: entry) }
+    }
+    public func rename(_ url: URL, to name: String) throws {
+        let source = try fileSystem.canonicalEntry(url)
+        let destination = try fileSystem.rename(source, to: name)
+        @MainActor func moved(_ url: URL) -> URL {
+            guard Self.contains(url, in: source) else { return url }
+            let suffix = String(url.path.dropFirst(source.path.count))
+            return URL(fileURLWithPath: destination.path + suffix, isDirectory: url.hasDirectoryPath)
+        }
+        for document in documents where Self.contains(document.url, in: source) {
+            document.didMove(to: moved(document.url))
+        }
+        expandedDirectories = Set(expandedDirectories.map(moved))
+        let directories = listing.keys.map(moved)
+        listing = [:]
+        for directory in directories { loadDirectory(directory) }
+    }
+    public func delete(_ url: URL, discardChanges: Bool = false) throws {
+        let source = try fileSystem.canonicalEntry(url)
+        let affected = documents.filter { Self.contains($0.url, in: source) }
+        guard discardChanges || !affected.contains(where: \.isDirty) else { throw EditorError.unsavedChanges }
+        try fileSystem.trash(source)
+        let selectedIndex = documents.firstIndex { $0.id == selectedID } ?? 0
+        let removed = Set(affected.map(\.id))
+        documents.removeAll { removed.contains($0.id) }
+        if let selectedID, removed.contains(selectedID) {
+            self.selectedID = documents.isEmpty ? nil : documents[min(selectedIndex, documents.count - 1)].id
+        }
+        expandedDirectories = expandedDirectories.filter { !Self.contains($0, in: source) }
+        listing = listing.filter { !Self.contains($0.key, in: source) }
+        refresh()
+    }
+    private static func contains(_ url: URL, in entry: URL) -> Bool {
+        url.path == entry.path || url.path.hasPrefix(entry.path + "/")
     }
     @discardableResult public func closeFile(_ id: UUID, decision: EditorCloseDecision) throws -> Bool {
         guard let index = documents.firstIndex(where: { $0.id == id }) else { return true }

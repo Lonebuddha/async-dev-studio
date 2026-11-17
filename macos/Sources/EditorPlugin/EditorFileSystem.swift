@@ -13,6 +13,18 @@ public protocol EditorFileSystem {
     func read(_ url: URL) throws -> Data
     func write(_ data: Data, to url: URL, replacing expected: Data) throws
     func create(name: String, in directory: URL) throws -> URL
+    func rename(_ url: URL, to name: String) throws -> URL
+    func trash(_ url: URL) throws
+}
+extension EditorFileSystem {
+    // Resolve the parent, not the entry: mutating a symlink must affect the link.
+    func canonicalEntry(_ url: URL) throws -> URL {
+        guard url.isFileURL else { throw EditorError.outsideFolder }
+        let entry = url.standardizedFileURL
+        guard entry.path != root.path else { throw EditorError.rootMutation }
+        let parent = try canonicalFile(entry.deletingLastPathComponent())
+        return parent.appendingPathComponent(entry.lastPathComponent)
+    }
 }
 public struct DiskEditorFileSystem: EditorFileSystem {
     public let root: URL
@@ -58,11 +70,26 @@ public struct DiskEditorFileSystem: EditorFileSystem {
         if let permissions = attributes[.posixPermissions] { try manager.setAttributes([.posixPermissions: permissions], ofItemAtPath: file.path) }
     }
     public func create(name: String, in directory: URL) throws -> URL {
-        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else { throw EditorError.invalidName }
+        try validateName(name)
         let folder = try canonicalFile(directory)
         let file = try canonicalFile(folder.appendingPathComponent(name))
         try Data().write(to: file, options: .withoutOverwriting)
         return file
+    }
+    public func rename(_ url: URL, to name: String) throws -> URL {
+        try validateName(name)
+        let source = try canonicalEntry(url)
+        let destination = source.deletingLastPathComponent().appendingPathComponent(name)
+        guard source.path != destination.path else { return source }
+        // moveItem fails if the destination exists; never replace another item.
+        try manager.moveItem(at: source, to: destination)
+        return destination
+    }
+    public func trash(_ url: URL) throws {
+        try manager.trashItem(at: canonicalEntry(url), resultingItemURL: nil)
+    }
+    private func validateName(_ name: String) throws {
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else { throw EditorError.invalidName }
     }
 }
 

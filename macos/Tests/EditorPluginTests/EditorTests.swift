@@ -108,6 +108,146 @@ final class EditorTests {
             try expectEqual(runtime.controllers[second.id]!.expandedDirectories, Set([canonicalFolder]))
         }
     }
+    func testRenameValidatesNamesAndDoesNotOverwrite() throws {
+        try fixture { root in
+            let fs = try DiskEditorFileSystem(folder: root)
+            let source = try file("source.txt", "source", at: fs.root)
+            let existing = try file("existing.txt", "keep", at: fs.root)
+            for name in ["", ".", "..", "../escape", "bad/name", "bad\0name", "existing.txt"] {
+                try expectThrows(try fs.rename(source, to: name))
+            }
+            let dangling = fs.root.appendingPathComponent("dangling.txt")
+            try FileManager.default.createSymbolicLink(at: dangling, withDestinationURL: fs.root.appendingPathComponent("missing"))
+            try expectThrows(try fs.rename(source, to: "dangling.txt"))
+            try expectTrue((try? FileManager.default.destinationOfSymbolicLink(atPath: dangling.path)) != nil)
+            try expectEqual(try String(contentsOf: existing), "keep")
+            try expectEqual(try String(contentsOf: source), "source")
+            try expectThrows(try fs.rename(fs.root, to: "renamed"))
+            try expectThrows(try fs.trash(fs.root))
+            let renamed = try fs.rename(source, to: "renamed.txt")
+            try expectFalse(FileManager.default.fileExists(atPath: source.path))
+            try expectEqual(try String(contentsOf: renamed), "source")
+            try expectEqual(try fs.rename(renamed, to: "renamed.txt"), renamed)
+            let caseRenamed = try fs.rename(renamed, to: "Renamed.txt")
+            try expectEqual(caseRenamed.lastPathComponent, "Renamed.txt")
+            try expectEqual(try String(contentsOf: caseRenamed), "source")
+        }
+    }
+    func testMutatingSymlinkAffectsLinkAndRejectsOutsideParents() throws {
+        try fixture { root in
+            try fixture { outside in
+                let fs = try DiskEditorFileSystem(folder: root)
+                let target = try file("outside.txt", "private", at: outside)
+                let link = fs.root.appendingPathComponent("link.txt")
+                try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+                let renamed = try fs.rename(link, to: "renamed-link.txt")
+                try expectEqual(try FileManager.default.destinationOfSymbolicLink(atPath: renamed.path), target.path)
+                try expectEqual(try String(contentsOf: target), "private")
+                try expectThrows(try fs.rename(target, to: "outside-renamed.txt"))
+                try expectThrows(try fs.trash(target))
+                let directoryLink = fs.root.appendingPathComponent("outside-folder")
+                try FileManager.default.createSymbolicLink(at: directoryLink, withDestinationURL: outside)
+                try expectThrows(try fs.rename(directoryLink.appendingPathComponent("outside.txt"), to: "escape.txt"))
+                try expectThrows(try fs.trash(directoryLink.appendingPathComponent("outside.txt")))
+            }
+        }
+    }
+    @MainActor func testFolderRenameKeepsOpenBuffersAndExpandedTree() throws {
+        try fixture { root in
+            let editor = try EditorWorkspace(folder: root)
+            let source = editor.root.appendingPathComponent("src", isDirectory: true)
+            let nested = source.appendingPathComponent("nested", isDirectory: true)
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            let doc = try editor.openFile(file("a.txt", "original", at: nested))
+            let sibling = try editor.openFile(file("src-other.txt", "other", at: editor.root))
+            doc.updateText("unsaved"); doc.selection = NSRange(location: 2, length: 1)
+            editor.selectedID = doc.id
+            editor.setDirectoryExpanded(source, expanded: true)
+            editor.setDirectoryExpanded(nested, expanded: true)
+            try editor.rename(source, to: "renamed")
+            let destination = editor.root.appendingPathComponent("renamed", isDirectory: true)
+            let movedNested = destination.appendingPathComponent("nested", isDirectory: true)
+            try expectEqual(doc.url.path, movedNested.appendingPathComponent("a.txt").path)
+            try expectEqual(doc.text, "unsaved"); try expectTrue(doc.isDirty)
+            try expectEqual(doc.selection, NSRange(location: 2, length: 1))
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(editor.expandedDirectories, Set([destination, movedNested]))
+            try expectEqual(editor.listing[movedNested]?.map(\.name), ["a.txt"])
+            try expectNil(editor.listing[source])
+            try expectEqual(sibling.url.lastPathComponent, "src-other.txt")
+            try expectEqual(try editor.openFile(doc.url).id, doc.id)
+            try expectEqual(editor.documents.count, 2)
+            try editor.save(doc)
+            try expectEqual(try String(contentsOf: doc.url), "unsaved")
+        }
+    }
+    @MainActor func testDeleteRequiresDiscardAndClosesOnlyAffectedTabs() throws {
+        try fixture { root in
+            let fs = try MutationEditorFileSystem(root: root)
+            let editor = try EditorWorkspace(fileSystem: fs)
+            let folder = fs.root.appendingPathComponent("src", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let first = try editor.openFile(file("a.txt", "disk", at: folder))
+            _ = try editor.openFile(file("b.txt", "b", at: folder))
+            let other = try editor.openFile(file("src-other.txt", "keep", at: fs.root))
+            first.updateText("unsaved"); editor.selectedID = first.id
+            editor.setDirectoryExpanded(folder, expanded: true)
+            try expectThrows(try editor.delete(folder))
+            try expectEqual(editor.documents.count, 3)
+            try expectTrue(fs.trashed.isEmpty)
+            try editor.delete(folder, discardChanges: true)
+            try expectEqual(editor.documents.map(\.id), [other.id])
+            try expectEqual(editor.selectedID, other.id)
+            try expectFalse(editor.expandedDirectories.contains(folder))
+            try expectNil(editor.listing[folder])
+            try expectFalse(FileManager.default.fileExists(atPath: folder.path))
+            try expectEqual(try String(contentsOf: fs.trashed[0].appendingPathComponent("a.txt")), "disk")
+            try expectEqual(try String(contentsOf: other.url), "keep")
+            try editor.delete(other.url)
+            try expectTrue(editor.documents.isEmpty); try expectNil(editor.selectedID)
+        }
+    }
+    @MainActor func testFailedRenameAndTrashPreserveWorkspace() throws {
+        try fixture { root in
+            let fs = try MutationEditorFileSystem(root: root)
+            let editor = try EditorWorkspace(fileSystem: fs)
+            let doc = try editor.openFile(file("a.txt", "original", at: fs.root))
+            let originalURL = doc.url
+            doc.updateText("unsaved")
+            fs.failMutation = true
+            try expectThrows(try editor.rename(doc.url, to: "renamed.txt"))
+            try expectThrows(try editor.delete(doc.url, discardChanges: true))
+            try expectEqual(editor.documents.map(\.id), [doc.id])
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(doc.url, originalURL)
+            try expectEqual(doc.text, "unsaved"); try expectTrue(doc.isDirty)
+            try expectEqual(try String(contentsOf: doc.url), "original")
+            try expectTrue(fs.trashed.isEmpty)
+        }
+    }
+    @MainActor func testNativeRenamePreservesSurfaceUndoAndCaret() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let editor = try EditorWorkspace(folder: root)
+            let doc = try editor.openFile(file("before.txt", "original", at: editor.root))
+            let surface = EditorTextSurface(document: doc); doc.surface = surface
+            surface.textView.undoManager?.beginUndoGrouping()
+            surface.textView.insertText(" edit", replacementRange: NSRange(location: 8, length: 0))
+            surface.textView.undoManager?.endUndoGrouping()
+            let selection = surface.textView.selectedRange()
+            try editor.rename(doc.url, to: "after.swift")
+            try expectTrue(doc.surface === surface)
+            try expectEqual(surface.textView.selectedRange(), selection)
+            try expectEqual(surface.textView.accessibilityLabel(), "after.swift")
+            try expectEqual(doc.text, "original edit")
+            surface.textView.undoManager?.undo()
+            try expectEqual(doc.text, "original")
+            surface.textView.undoManager?.redo()
+            try editor.save(doc)
+            try expectEqual(try String(contentsOf: doc.url), "original edit")
+        }
+    }
+
     @MainActor func testDirtyStateAndSave() throws {
         try fixture { root in
             let url = try file("a.txt", "alpha\r\n", at: root)
@@ -382,4 +522,37 @@ private final class FailingEditorFileSystem: EditorFileSystem {
     func read(_ url: URL) throws -> Data { try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { throw CocoaError(.fileWriteNoPermission) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
+    func rename(_ url: URL, to name: String) throws -> URL { try base.rename(url, to: name) }
+    func trash(_ url: URL) throws { try base.trash(url) }
+}
+
+/// Route successful trash operations to a disposable test directory, not the user's Trash.
+private final class MutationEditorFileSystem: EditorFileSystem {
+    let base: DiskEditorFileSystem
+    let trashDirectory: URL
+    var failMutation = false
+    var trashed: [URL] = []
+    var root: URL { base.root }
+    init(root: URL) throws {
+        let folder = root.appendingPathComponent("workspace", isDirectory: true)
+        trashDirectory = root.appendingPathComponent("trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+        base = try DiskEditorFileSystem(folder: folder)
+    }
+    func canonicalFile(_ url: URL) throws -> URL { try base.canonicalFile(url) }
+    func entries(in directory: URL) throws -> [EditorEntry] { try base.entries(in: directory) }
+    func read(_ url: URL) throws -> Data { try base.read(url) }
+    func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
+    func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
+    func rename(_ url: URL, to name: String) throws -> URL {
+        if failMutation { throw CocoaError(.fileWriteNoPermission) }
+        return try base.rename(url, to: name)
+    }
+    func trash(_ url: URL) throws {
+        if failMutation { throw CocoaError(.fileWriteNoPermission) }
+        let destination = trashDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.moveItem(at: canonicalEntry(url), to: destination)
+        trashed.append(destination)
+    }
 }
