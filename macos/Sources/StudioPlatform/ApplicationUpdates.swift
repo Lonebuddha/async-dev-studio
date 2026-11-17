@@ -98,11 +98,17 @@ public struct SystemApplicationUpdateInstaller: ApplicationUpdateInstalling {
         guard processID > 0 else { throw ApplicationUpdateError.invalidProcess }
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
-        helper.arguments = [transaction.directory.appendingPathComponent("install-update.sh").path, "--commit", transaction.directory.path,
+        helper.arguments = [transaction.directory.appendingPathComponent("install-update.sh").path, "--launch", transaction.directory.path,
                             transaction.target.path, String(processID), transaction.manifest.path, transaction.version, opener.path, transaction.result.path]
         helper.standardInput = FileHandle.nullDevice
-        helper.standardOutput = FileHandle.nullDevice; helper.standardError = FileHandle.nullDevice
+        let output = Pipe()
+        helper.standardOutput = output; helper.standardError = output
         try helper.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        helper.waitUntilExit()
+        guard helper.terminationStatus == 0 else {
+            throw ApplicationUpdateError.failed("Couldn’t start the update helper. " + String(decoding: data, as: UTF8.self))
+        }
     }
     public func discard(_ transaction: ApplicationUpdateTransaction) {
         try? FileManager.default.removeItem(at: transaction.directory)

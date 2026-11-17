@@ -1,6 +1,8 @@
 #!/bin/sh
 # The running app prepares a transaction, then starts this independent helper.
 set -eu
+# Terminal may send HUP when its command window closes. The updater must survive.
+trap '' HUP
 validate_app() {
     [ -d "$1" ] && [ ! -L "$1" ] || return 1
     [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist")" = dev.asyncstudio.macos ] || return 1
@@ -53,6 +55,23 @@ case "${1:-}" in
     trap - EXIT
     printf '%s\n' "$transaction"
     ;;
+--launch)
+    [ "$#" -eq 8 ] || exit 2
+    transaction=$2
+    /usr/bin/nohup /bin/sh "$0" --commit "$2" "$3" "$4" "$5" "$6" "$7" "$8" \
+        >> "$transaction/launcher.log" 2>&1 < /dev/null &
+    helper_pid=$!
+    printf '%s\n' "$helper_pid" > "$transaction/helper.pid"
+    # Return only after the detached child has established its signal handling.
+    attempts=0
+    while [ ! -f "$transaction/helper.ready" ]; do
+        kill -0 "$helper_pid" 2>/dev/null || { printf 'The update helper could not start.\n' >&2; exit 1; }
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 100 ] || { printf 'The update helper did not become ready.\n' >&2; exit 1; }
+        /bin/sleep 0.02
+    done
+    printf '%s\n' "$helper_pid"
+    ;;
 --commit)
     [ "$#" -eq 8 ] || exit 2
     transaction=$2; target=$3; parent_pid=$4; manifest=$5; version=$6; opener=$7; result=$8
@@ -88,13 +107,18 @@ case "${1:-}" in
         if [ "$locked" = true ]; then /bin/rm -f "$lock/pid"; /bin/rmdir "$lock" || true; fi
     }
     trap finish EXIT
-    trap 'exit 1' HUP INT TERM
+    trap 'exit 1' INT TERM
+    printf '%s\n' "$$" > "$transaction/helper.ready"
+    printf 'Waiting for Async Dev Studio to quit (PID %s).\n' "$parent_pid"
+    printf 'waiting\n' > "$transaction/status.txt"
     attempts=0
     while { [ "$parent_pid" -gt 0 ] && kill -0 "$parent_pid" 2>/dev/null; } || target_running; do
         attempts=$((attempts + 1))
-        [ "$attempts" -lt 6000 ] || exit 1
-        /bin/sleep 0.1
+        [ "$attempts" -lt 7200 ] || exit 1
+        /bin/sleep 0.5
     done
+    printf 'Application closed; verifying and installing build %s.\n' "$version"
+    printf 'installing\n' > "$transaction/status.txt"
     # Recover a lock left by a crashed installer, but never interrupt a live one.
     if [ -d "$lock" ] && [ ! -L "$lock" ]; then
         owner=$(/bin/cat "$lock/pid" 2>/dev/null || true)
@@ -118,6 +142,7 @@ case "${1:-}" in
     success=true
     /bin/rm -f "$manifest" "$result"
     # Retain the previous bundle for recovery; the next transaction has its own backup.
+    printf 'installed\n' > "$transaction/status.txt"
     printf 'Installed %s\nPrevious bundle: %s\n' "$version" "$backup"
     ;;
 --bootstrap)
@@ -129,7 +154,12 @@ case "${1:-}" in
     parent_pid=${pids:-0}
     printf 'Quit Async Dev Studio normally to install this update. Running commands will not be stopped automatically.\n'
     transaction=$(/bin/sh "$0" --prepare "$package" "$target" "$version")
-    exec /bin/sh "$transaction/install-update.sh" --commit "$transaction" "$target" "$parent_pid" "$manifest" "$version" /usr/bin/open "$result"
+    helper_pid=$(/bin/sh "$transaction/install-update.sh" --launch "$transaction" "$target" "$parent_pid" "$manifest" "$version" /usr/bin/open "$result")
+    printf 'Updater is running independently in the background (PID %s).\n' "$helper_pid"
+    printf 'Quit Async Dev Studio completely with Command-Q. The updated app will then reopen automatically.\n'
+    printf 'You may close this command window. The new update menu appears after installation.\n'
+    printf 'Installer status: %s/status.txt\n' "$transaction"
+    printf 'Installer log: %s/install.log\n' "$transaction"
     ;;
 *) printf 'Unknown update operation.\n' >&2; exit 2;;
 esac

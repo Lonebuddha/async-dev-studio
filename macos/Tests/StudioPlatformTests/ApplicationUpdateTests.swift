@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import StudioPlatform
 
@@ -132,6 +133,34 @@ final class ApplicationUpdateTests {
             try expectTrue(build.label.contains("local changes"))
         }
     }
+    func testDetachedInstallerSurvivesHangupBeforeApplicationExit() async throws {
+        try await fixture { root in
+            let update = try publish("2", root: root)
+            try signedBundle(update.packageURL, version: "2")
+            let target = root.appendingPathComponent("Installed.app", isDirectory: true)
+            try signedBundle(target, version: "1")
+            let installer = SystemApplicationUpdateInstaller(script: script, opener: try opener(in: root))
+            let transaction = try installer.prepare(update, target: target, manifest: update.manifestURL(in: root), result: root.appendingPathComponent("error"))
+            let parent = Process(); parent.executableURL = URL(fileURLWithPath: "/bin/sleep"); parent.arguments = ["30"]
+            try parent.run(); defer { if parent.isRunning { parent.terminate() } }
+            // schedule returns after the short-lived launcher exits; installation is detached.
+            try installer.schedule(transaction, afterExitOf: parent.processIdentifier)
+            let pidText = try String(contentsOf: transaction.directory.appendingPathComponent("helper.pid")).trimmingCharacters(in: .whitespacesAndNewlines)
+            let pid = Int32(pidText)!
+            try expectEqual(kill(pid, SIGHUP), 0)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            try expectEqual(kill(pid, 0), 0)
+            try expectEqual(try version(target), "1")
+            try expectEqual(try String(contentsOf: transaction.directory.appendingPathComponent("status.txt")), "waiting\n")
+            parent.terminate()
+            while parent.isRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+            try await waitUntil { !FileManager.default.fileExists(atPath: update.manifestURL(in: root).path) }
+            try expectEqual(try version(target), "2")
+            try expectEqual(try String(contentsOf: root.appendingPathComponent("opened")), "2\n")
+            try expectFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("error").path))
+        }
+    }
+
     func testInstallerAlsoWaitsForLiveTargetThroughPathAliases() async throws {
         try await fixture { root in
             let update = try publish("2", root: root)

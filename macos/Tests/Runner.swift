@@ -80,6 +80,7 @@ struct Runner {
             ("all archived and delete selection", { try ProjectArchiveTests().testAllArchivedAndDeletionSelection() }),
             ("update discovery and shutdown cancellation", { try await ApplicationUpdateTests().testDiscoveryAndCancellationKeepStagedUpdate() }),
             ("update waits for exit and keeps backup", { try await ApplicationUpdateTests().testInstallerWaitsThenInstallsAndPreservesBackup() }),
+            ("update survives launcher hangup while waiting", { try await ApplicationUpdateTests().testDetachedInstallerSurvivesHangupBeforeApplicationExit() }),
             ("update waits for live target through path aliases", { try await ApplicationUpdateTests().testInstallerAlsoWaitsForLiveTargetThroughPathAliases() }),
             ("update relaunch failure rolls back", { try await ApplicationUpdateTests().testFailedRelaunchRollsBackAndKeepsPendingUpdate() }),
             ("update rejects tampering and unrelated apps", { try await ApplicationUpdateTests().testRejectsTamperedBundlesAndUnrelatedTargets() }),
