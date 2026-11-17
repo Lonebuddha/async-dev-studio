@@ -447,6 +447,76 @@ final class EditorTests {
             try expectEqual(String(decoding: Data(contentsOf: doc.url), as: UTF8.self), "first")
         }
     }
+    func testCreateFolderRejectsCollisionsAndInvalidLocations() throws {
+        try fixture { root in
+            let fs = try DiskEditorFileSystem(folder: root)
+            let folder = try fs.createFolder(name: "New folder", in: fs.root)
+            try expectTrue(try folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true)
+            let child = try file("keep.txt", "keep", at: folder)
+            let existing = try file("existing.txt", "original", at: fs.root)
+            let link = fs.root.appendingPathComponent("dangling")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fs.root.appendingPathComponent("missing"))
+            for name in ["New folder", "existing.txt", "dangling", "", ".", "..", "../escape", "a/b", "bad\0name"] {
+                try expectThrows(try fs.createFolder(name: name, in: fs.root))
+            }
+            try expectEqual(try String(contentsOf: child), "keep")
+            try expectEqual(try String(contentsOf: existing), "original")
+            try expectTrue((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) != nil)
+            try expectThrows(try fs.createFolder(name: "child", in: existing))
+            try fixture { outside in
+                try expectThrows(try fs.createFolder(name: "escape", in: outside))
+                let alias = fs.root.appendingPathComponent("outside")
+                try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: outside)
+                try expectThrows(try fs.createFolder(name: "escape", in: alias))
+                try expectFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("escape").path))
+            }
+        }
+    }
+    @MainActor func testCreateFolderRevealsParentAndKeepsOpenDocuments() throws {
+        try fixture { root in
+            let editor = try EditorWorkspace(folder: root)
+            let parent = editor.root.appendingPathComponent("Parent", isDirectory: true)
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            let doc = try editor.openFile(file("open.txt", "disk", at: editor.root))
+            doc.updateText("unsaved")
+            editor.refresh()
+            try expectFalse(editor.expandedDirectories.contains(parent))
+            let folder = try editor.createFolder(name: "Child", in: parent)
+            try expectTrue(editor.expandedDirectories.contains(parent))
+            let entries = editor.listing[parent]!
+            try expectEqual(entries.map(\.name), ["Child"])
+            try expectTrue(entries[0].isDirectory)
+            try expectEqual(entries[0].url, folder)
+            try expectEqual(editor.documents.map(\.id), [doc.id])
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(doc.text, "unsaved")
+            try expectTrue(doc.isDirty)
+            _ = try editor.createFolder(name: "Root child", in: editor.root)
+            try expectTrue(editor.listing[editor.root]?.contains { $0.name == "Root child" && $0.isDirectory } == true)
+            let listing = editor.listing
+            try expectThrows(try editor.createFolder(name: "Child", in: parent))
+            try expectEqual(editor.listing, listing)
+            try expectEqual(editor.selectedID, doc.id)
+        }
+    }
+    @MainActor func testFailedFolderCreationKeepsWorkspace() throws {
+        try fixture { root in
+            let fs = try MutationEditorFileSystem(root: root)
+            let editor = try EditorWorkspace(fileSystem: fs)
+            let doc = try editor.openFile(file("open.txt", "disk", at: fs.root))
+            doc.updateText("unsaved")
+            let listing = editor.listing
+            let expanded = editor.expandedDirectories
+            fs.failMutation = true
+            try expectThrows(try editor.createFolder(name: "Denied", in: fs.root))
+            try expectEqual(editor.listing, listing)
+            try expectEqual(editor.expandedDirectories, expanded)
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(doc.text, "unsaved")
+            try expectFalse(FileManager.default.fileExists(atPath: fs.root.appendingPathComponent("Denied").path))
+        }
+    }
+
     @MainActor func testSaveFailureKeepsDirtyTab() throws {
         try fixture { root in
             let url = try file("a.txt", "original", at: root)
@@ -595,6 +665,7 @@ private final class FailingEditorFileSystem: EditorFileSystem {
     func read(_ url: URL) throws -> Data { try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { throw CocoaError(.fileWriteNoPermission) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
+    func createFolder(name: String, in directory: URL) throws -> URL { try base.createFolder(name: name, in: directory) }
     func rename(_ url: URL, to name: String) throws -> URL { try base.rename(url, to: name) }
     func trash(_ url: URL) throws { try base.trash(url) }
 }
@@ -623,6 +694,10 @@ private final class MutationEditorFileSystem: EditorFileSystem {
     func read(_ url: URL) throws -> Data { reads.append(url); return try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
+    func createFolder(name: String, in directory: URL) throws -> URL {
+        if failMutation { throw CocoaError(.fileWriteNoPermission) }
+        return try base.createFolder(name: name, in: directory)
+    }
     func rename(_ url: URL, to name: String) throws -> URL {
         if failMutation { throw CocoaError(.fileWriteNoPermission) }
         return try base.rename(url, to: name)

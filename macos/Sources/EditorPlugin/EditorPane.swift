@@ -10,6 +10,7 @@ public struct EditorPane: View {
                 VStack(spacing: 0) {
                     HStack {
                         Text(workspace.root.lastPathComponent).font(.headline).lineLimit(1).help(workspace.root.path)
+                            .contextMenu { EditorCreationMenu(workspace: workspace, directory: workspace.root) }
                         Spacer()
                         Button { workspace.refresh() } label: { Image(systemName: "arrow.clockwise") }.help("Refresh files")
                         Button { newFile(in: workspace.root) } label: { Image(systemName: "doc.badge.plus") }.help("New file")
@@ -76,11 +77,19 @@ private struct EditorFolderRow: View {
         } label: {
             Label(entry.name, systemImage: "folder").lineLimit(1)
                 .contextMenu {
-                    Button("New File…") { EditorActions.newFile(in: entry.url, workspace: workspace) }
+                    EditorCreationMenu(workspace: workspace, directory: entry.url)
                     Divider()
                     EditorEntryMenu(workspace: workspace, entry: entry)
                 }
         }
+    }
+}
+private struct EditorCreationMenu: View {
+    let workspace: EditorWorkspace
+    let directory: URL
+    var body: some View {
+        Button("New File…") { EditorActions.newFile(in: directory, workspace: workspace) }
+        Button("New Folder…") { EditorActions.newFolder(in: directory, workspace: workspace) }
     }
 }
 private struct EditorEntryMenu: View {
@@ -209,13 +218,22 @@ private enum EditorActions {
         catch { workspace.error = error.localizedDescription }
     }
     static func newFile(in directory: URL, workspace: EditorWorkspace) {
-        let alert = NSAlert(); alert.messageText = "New file"; alert.informativeText = directory.path
+        newItem(in: directory, workspace: workspace, creatingFolder: false)
+    }
+    static func newFolder(in directory: URL, workspace: EditorWorkspace) {
+        newItem(in: directory, workspace: workspace, creatingFolder: true)
+    }
+    private static func newItem(in directory: URL, workspace: EditorWorkspace, creatingFolder: Bool) {
+        let alert = NSAlert(); alert.messageText = creatingFolder ? "New folder" : "New file"; alert.informativeText = directory.path
         let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        name.placeholderString = "File name"; alert.accessoryView = name
+        name.placeholderString = creatingFolder ? "Folder name" : "File name"; alert.accessoryView = name
         alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = name
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do { try workspace.createFile(name: name.stringValue, in: directory) }
+        do {
+            if creatingFolder { try workspace.createFolder(name: name.stringValue, in: directory) }
+            else { try workspace.createFile(name: name.stringValue, in: directory) }
+        }
         catch { workspace.error = error.localizedDescription }
     }
 }

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct EditorEntry: Identifiable, Equatable {
@@ -13,6 +14,7 @@ public protocol EditorFileSystem {
     func read(_ url: URL) throws -> Data
     func write(_ data: Data, to url: URL, replacing expected: Data) throws
     func create(name: String, in directory: URL) throws -> URL
+    func createFolder(name: String, in directory: URL) throws -> URL
     func rename(_ url: URL, to name: String) throws -> URL
     func trash(_ url: URL) throws
 }
@@ -79,6 +81,16 @@ public struct DiskEditorFileSystem: EditorFileSystem {
         let file = try canonicalFile(folder.appendingPathComponent(name))
         try Data().write(to: file, options: .withoutOverwriting)
         return file
+    }
+    public func createFolder(name: String, in directory: URL) throws -> URL {
+        try validateName(name)
+        let parent = try canonicalFile(directory)
+        let folder = parent.appendingPathComponent(name, isDirectory: true)
+        // mkdir is exclusive: existing directories, files and symlinks all fail.
+        guard mkdir(folder.path, 0o755) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSFilePathErrorKey: folder.path])
+        }
+        return folder
     }
     public func rename(_ url: URL, to name: String) throws -> URL {
         try validateName(name)

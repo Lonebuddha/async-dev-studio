@@ -108,6 +108,13 @@ public final class EditorWorkspace: ObservableObject {
         loadDirectory(directory)
         return try openFile(url)
     }
+    @discardableResult public func createFolder(name: String, in directory: URL) throws -> URL {
+        let parent = try fileSystem.canonicalFile(directory)
+        let folder = try fileSystem.createFolder(name: name, in: parent)
+        if parent.path == root.path { loadDirectory(root) }
+        else { setDirectoryExpanded(parent, expanded: true) }
+        return folder
+    }
     public func documents(inside url: URL) throws -> [EditorDocument] {
         let entry = try fileSystem.canonicalEntry(url)
         return documents.filter { Self.contains($0.url, in: entry) }

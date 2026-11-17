@@ -29,7 +29,7 @@ public enum EditorError: Error, LocalizedError {
         case .tooLarge: return "This basic editor supports files up to 10 MB."
         case .changedOnDisk: return "The file changed or was removed on disk. Your edits are still open. Compare with the disk version, or reload to discard your edits."
         case .unsavedChanges: return "Save or explicitly discard unsaved changes before continuing."
-        case .invalidName: return "Enter a file name without slashes, not . or .. ."
+        case .invalidName: return "Enter a file or folder name without slashes, not . or .. ."
         case .rootMutation: return "The editor’s configured root folder cannot be renamed or deleted here."
         }
     }

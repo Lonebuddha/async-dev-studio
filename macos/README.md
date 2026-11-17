@@ -73,7 +73,8 @@ The native AppKit text control provides selection, copy/paste, undo/redo, and a 
 - **Home / End**: move the cursor to the beginning/end of the current line. Hold Shift to select to that boundary. On compact keyboards, use Fn-Left / Fn-Right.
 - **Undo / Redo**: ⌘Z / ⇧⌘Z.
 - **Close the focused file**: ⌘W, or its tab’s close button.
-- **New file**: the folder pane’s plus button, or a subfolder’s context menu. Existing files are never overwritten by creation.
+- **New file**: the folder pane’s plus button, or a folder’s context menu. Existing files are never overwritten by creation.
+- **New folder**: right-click a folder name (or the root name above the tree) and choose **New Folder…**. Enter a single folder name; existing items are never replaced. The parent expands and refreshes to reveal the new folder, while open file tabs and unsaved edits stay intact.
 - **Reload from Disk** and **Reveal in Finder**: a file tab’s context menu.
 - **Tree context menu**: right-click a file or folder name for **Rename…**, **Delete…**, and **Copy Name** (including the extension). Rename preserves open buffers, undo history, and expanded folders. Delete asks for confirmation, moves the item and its contents to Trash, and closes affected tabs; the confirmation warns before discarding unsaved edits.
 - **Refresh files**: the folder pane’s refresh button. Directory contents load when expanded; hidden files are included. Refresh updates the tree without opening or reloading documents, and removes cached folders that were deleted or renamed outside the editor.
