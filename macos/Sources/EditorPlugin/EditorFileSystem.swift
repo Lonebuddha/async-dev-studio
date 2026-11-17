@@ -45,7 +45,11 @@ public struct DiskEditorFileSystem: EditorFileSystem {
         return try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: []).map { url in
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             // Symlink directories appear as files: no recursive cycles or implicit outside traversal.
-            return EditorEntry(url: url, name: url.lastPathComponent, isDirectory: values.isDirectory == true && values.isSymbolicLink != true)
+            let isDirectory = values.isDirectory == true && values.isSymbolicLink != true
+            // FileManager may return /private/var for a /var parent. Keep tree
+            // identities in the same namespace as the validated directory.
+            let entryURL = folder.appendingPathComponent(url.lastPathComponent, isDirectory: isDirectory)
+            return EditorEntry(url: entryURL, name: url.lastPathComponent, isDirectory: isDirectory)
         }.sorted { a, b in
             if a.isDirectory != b.isDirectory { return a.isDirectory }
             return a.name.localizedStandardCompare(b.name) == .orderedAscending

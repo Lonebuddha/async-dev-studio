@@ -248,6 +248,79 @@ final class EditorTests {
         }
     }
 
+    @MainActor func testTreeRefreshDoesNotReopenClosedDeletedFiles() throws {
+        try fixture { root in
+            let fs = try MutationEditorFileSystem(root: root)
+            let editor = try EditorWorkspace(fileSystem: fs)
+            let closed = try editor.openFile(file("closed.txt", "closed", at: fs.root))
+            let other = try editor.openFile(file("other.txt", "keep", at: fs.root))
+            other.updateText("unsaved edits")
+            try expectTrue(try editor.closeFile(closed.id, decision: .discard))
+            try FileManager.default.removeItem(at: closed.url)
+            let reads = fs.reads
+            editor.refresh()
+            try expectNil(editor.error)
+            try expectEqual(fs.reads, reads)
+            try expectEqual(editor.documents.map(\.id), [other.id])
+            try expectEqual(editor.selectedID, other.id)
+            try expectEqual(other.text, "unsaved edits")
+            try expectEqual(editor.listing[fs.root]?.map(\.name), ["other.txt"])
+            try expectTrue(try editor.closeFile(other.id, decision: .discard))
+            try FileManager.default.removeItem(at: other.url)
+            editor.refresh()
+            try expectNil(editor.error)
+            try expectTrue(editor.documents.isEmpty)
+            try expectNil(editor.selectedID)
+            try expectEqual(fs.reads, reads)
+        }
+    }
+    @MainActor func testTreeRefreshPrunesExternallyRemovedDirectories() throws {
+        try fixture { root in
+            let editor = try EditorWorkspace(folder: root)
+            let folder = editor.root.appendingPathComponent("removed", isDirectory: true)
+            let nested = folder.appendingPathComponent("nested", isDirectory: true)
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            let doc = try editor.openFile(file("closed.txt", "closed", at: nested))
+            editor.setDirectoryExpanded(folder, expanded: true)
+            editor.setDirectoryExpanded(nested, expanded: true)
+            // A visited folder remains cached even after its disclosure is closed.
+            editor.setDirectoryExpanded(folder, expanded: false)
+            try expectTrue(try editor.closeFile(doc.id, decision: .discard))
+            try FileManager.default.removeItem(at: folder)
+            editor.refresh()
+            try expectNil(editor.error)
+            try expectTrue(editor.documents.isEmpty)
+            try expectNil(editor.selectedID)
+            try expectNil(editor.listing[folder])
+            try expectNil(editor.listing[nested])
+            try expectTrue(editor.expandedDirectories.isEmpty)
+            try expectEqual(editor.listing[editor.root]?.count, 0)
+            editor.refresh()
+            try expectNil(editor.error)
+        }
+    }
+
+    @MainActor func testTreeRefreshReportsReadFailuresWithoutLosingBuffersOrTree() throws {
+        try fixture { root in
+            let fs = try MutationEditorFileSystem(root: root)
+            let editor = try EditorWorkspace(fileSystem: fs)
+            let folder = fs.root.appendingPathComponent("restricted", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let doc = try editor.openFile(file("open.txt", "disk", at: folder))
+            doc.updateText("unsaved edits")
+            editor.setDirectoryExpanded(folder, expanded: true)
+            let listing = editor.listing
+            fs.failListingAt = folder
+            editor.refresh()
+            try expectTrue(editor.error?.contains("Couldn’t refresh files in") == true)
+            try expectEqual(editor.listing, listing)
+            try expectTrue(editor.expandedDirectories.contains(folder))
+            try expectEqual(editor.documents.map(\.id), [doc.id])
+            try expectEqual(editor.selectedID, doc.id)
+            try expectEqual(doc.text, "unsaved edits")
+        }
+    }
+
     @MainActor func testDirtyStateAndSave() throws {
         try fixture { root in
             let url = try file("a.txt", "alpha\r\n", at: root)
@@ -531,6 +604,8 @@ private final class MutationEditorFileSystem: EditorFileSystem {
     let base: DiskEditorFileSystem
     let trashDirectory: URL
     var failMutation = false
+    var reads: [URL] = []
+    var failListingAt: URL?
     var trashed: [URL] = []
     var root: URL { base.root }
     init(root: URL) throws {
@@ -541,8 +616,11 @@ private final class MutationEditorFileSystem: EditorFileSystem {
         base = try DiskEditorFileSystem(folder: folder)
     }
     func canonicalFile(_ url: URL) throws -> URL { try base.canonicalFile(url) }
-    func entries(in directory: URL) throws -> [EditorEntry] { try base.entries(in: directory) }
-    func read(_ url: URL) throws -> Data { try base.read(url) }
+    func entries(in directory: URL) throws -> [EditorEntry] {
+        if directory.path == failListingAt?.path { throw CocoaError(.fileReadNoPermission) }
+        return try base.entries(in: directory)
+    }
+    func read(_ url: URL) throws -> Data { reads.append(url); return try base.read(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
     func rename(_ url: URL, to name: String) throws -> URL {

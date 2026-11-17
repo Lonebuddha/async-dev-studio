@@ -62,7 +62,27 @@ public final class EditorWorkspace: ObservableObject {
         }
     }
     public func refresh() {
-        for url in Array(listing.keys) { loadDirectory(url) }
+        // Refresh parents first. Cached children may have been removed by another
+        // tool; only revisit directories still present in their parent's new list.
+        let cached = Set(listing.keys).union(expandedDirectories)
+        var refreshed: [URL: [EditorEntry]] = [:]
+        var reachable: Set<URL> = [root]
+        var pending: ArraySlice<URL> = [root]
+        while let directory = pending.popFirst() {
+            do {
+                let entries = try fileSystem.entries(in: directory)
+                refreshed[directory] = entries
+                for entry in entries where entry.isDirectory {
+                    reachable.insert(entry.url)
+                    if cached.contains(entry.url) { pending.append(entry.url) }
+                }
+            } catch {
+                self.error = "Couldn’t refresh files in \(directory.path): \(error.localizedDescription)"
+                return
+            }
+        }
+        listing = refreshed
+        expandedDirectories = expandedDirectories.intersection(reachable)
     }
     @discardableResult public func openFile(_ url: URL) throws -> EditorDocument {
         let canonical = try fileSystem.canonicalFile(url)

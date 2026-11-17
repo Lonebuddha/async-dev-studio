@@ -76,7 +76,7 @@ The native AppKit text control provides selection, copy/paste, undo/redo, and a 
 - **New file**: the folder pane’s plus button, or a subfolder’s context menu. Existing files are never overwritten by creation.
 - **Reload from Disk** and **Reveal in Finder**: a file tab’s context menu.
 - **Tree context menu**: right-click a file or folder name for **Rename…**, **Delete…**, and **Copy Name** (including the extension). Rename preserves open buffers, undo history, and expanded folders. Delete asks for confirmation, moves the item and its contents to Trash, and closes affected tabs; the confirmation warns before discarding unsaved edits.
-- **Refresh files**: the folder pane’s refresh button. Directory contents load when expanded; hidden files are included.
+- **Refresh files**: the folder pane’s refresh button. Directory contents load when expanded; hidden files are included. Refresh updates the tree without opening or reloading documents, and removes cached folders that were deleted or renamed outside the editor.
 
 Closing a dirty file, closing/deleting an editor instance, changing its folder, or quitting asks **Save / Don’t Save / Cancel** for each modified file. A cancellation keeps the remaining buffers open; a save error keeps the edited text and blocks the close. Cancelling a later prompt does not discard files from earlier prompts. Files already saved stay saved. Renaming an instance keeps its open files; changing its folder closes its current runtime after approval. Deleting an editor definition never deletes its folder or source files.
 
