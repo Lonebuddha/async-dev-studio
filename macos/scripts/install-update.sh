@@ -58,23 +58,27 @@ case "${1:-}" in
 --launch)
     [ "$#" -eq 8 ] || exit 2
     transaction=$2
-    /usr/bin/nohup /bin/sh "$0" --commit "$2" "$3" "$4" "$5" "$6" "$7" "$8" \
-        >> "$transaction/launcher.log" 2>&1 < /dev/null &
-    helper_pid=$!
-    printf '%s\n' "$helper_pid" > "$transaction/helper.pid"
-    # Return only after the detached child has established its signal handling.
+    label="dev.asyncstudio.update.$(basename -- "$transaction")"
+    printf '%s\n' "$label" > "$transaction/launchd.label"
+    /bin/launchctl submit -l "$label" -o "$transaction/launcher.log" -e "$transaction/launcher.log" -- \
+        /bin/sh "$0" --commit "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$label"
+    # launchd owns the child, so closing Terminal or its parent app cannot reap it.
     attempts=0
     while [ ! -f "$transaction/helper.ready" ]; do
-        kill -0 "$helper_pid" 2>/dev/null || { printf 'The update helper could not start.\n' >&2; exit 1; }
         attempts=$((attempts + 1))
-        [ "$attempts" -lt 100 ] || { printf 'The update helper did not become ready.\n' >&2; exit 1; }
+        if [ "$attempts" -ge 200 ]; then
+            /bin/launchctl remove "$label" || true
+            printf 'The update helper did not become ready. See %s/launcher.log\n' "$transaction" >&2
+            exit 1
+        fi
         /bin/sleep 0.02
     done
-    printf '%s\n' "$helper_pid"
+    /bin/cat "$transaction/helper.pid"
     ;;
 --commit)
-    [ "$#" -eq 8 ] || exit 2
+    { [ "$#" -eq 8 ] || [ "$#" -eq 9 ]; } || exit 2
     transaction=$2; target=$3; parent_pid=$4; manifest=$5; version=$6; opener=$7; result=$8
+    job_label=${9:-}
     case "$parent_pid" in ''|*[!0-9]*) exit 2;; esac
     # ps reports the physical executable path (for example /private/var, not /var).
     target_parent=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd -P)
@@ -87,6 +91,7 @@ case "${1:-}" in
     lock="$(dirname -- "$target")/.async-dev-studio-install.lock"
     finish() {
         if [ "$success" != true ]; then
+            printf 'failed\n' > "$transaction/status.txt"
             # Never move a bundle once a process has started from it.
             if [ "$installed" = true ] && target_running; then
                 message="Update could not finish safely. The previous application is retained at $backup."
@@ -105,9 +110,12 @@ case "${1:-}" in
             printf '%s\nDetails: %s\n' "$message" "$log" > "$result"
         fi
         if [ "$locked" = true ]; then /bin/rm -f "$lock/pid"; /bin/rmdir "$lock" || true; fi
+        # submit jobs are removed explicitly, so this installer cannot be restarted.
+        case "$job_label" in dev.asyncstudio.update.*) /bin/launchctl remove "$job_label" >/dev/null 2>&1 || true;; esac
     }
     trap finish EXIT
     trap 'exit 1' INT TERM
+    printf '%s\n' "$$" > "$transaction/helper.pid"
     printf '%s\n' "$$" > "$transaction/helper.ready"
     printf 'Waiting for Async Dev Studio to quit (PID %s).\n' "$parent_pid"
     printf 'waiting\n' > "$transaction/status.txt"

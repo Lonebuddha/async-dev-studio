@@ -147,6 +147,8 @@ final class ApplicationUpdateTests {
             try installer.schedule(transaction, afterExitOf: parent.processIdentifier)
             let pidText = try String(contentsOf: transaction.directory.appendingPathComponent("helper.pid")).trimmingCharacters(in: .whitespacesAndNewlines)
             let pid = Int32(pidText)!
+            let owner = try run("/bin/ps", ["-p", String(pid), "-o", "ppid="]).trimmingCharacters(in: .whitespacesAndNewlines)
+            try expectEqual(owner, "1") // launchd, rather than Terminal or the launching app
             try expectEqual(kill(pid, SIGHUP), 0)
             try await Task.sleep(nanoseconds: 200_000_000)
             try expectEqual(kill(pid, 0), 0)
@@ -158,6 +160,7 @@ final class ApplicationUpdateTests {
             try expectEqual(try version(target), "2")
             try expectEqual(try String(contentsOf: root.appendingPathComponent("opened")), "2\n")
             try expectFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("error").path))
+            try await waitUntil { kill(pid, 0) != 0 }
         }
     }
 
