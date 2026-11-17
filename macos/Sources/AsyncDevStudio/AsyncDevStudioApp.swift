@@ -15,11 +15,20 @@ import StudioPlatform
 struct AsyncDevStudioApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     @StateObject private var application = ApplicationModel()
+    @StateObject private var updates = ApplicationUpdates()
     @AppStorage("showArchivedProjects") private var showArchivedProjects = false
 
     var body: some Scene {
         WindowGroup("Async Dev Studio") {
-            Group {
+            VStack(spacing: 0) {
+                if let pending = updates.pending {
+                    HStack {
+                        Text("Update ready (\(pending.label))")
+                        Spacer()
+                        Button("Install Update & Restart") { delegate.installUpdate() }
+                    }.padding(10)
+                    Divider()
+                }
                 if let workspace = application.workspace {
                     WorkspaceView(model: workspace, terminals: application.terminals, browsers: application.browsers, editors: application.editors, images: application.images)
                         .onAppear { delegate.workspace = workspace }
@@ -40,16 +49,32 @@ struct AsyncDevStudioApp: App {
                 }
             }
             .frame(minWidth: 700, minHeight: 440)
-            .onAppear { delegate.terminals = application.terminals; delegate.browsers = application.browsers; delegate.editors = application.editors; delegate.workspace = application.workspace }
+            .onAppear { delegate.terminals = application.terminals; delegate.browsers = application.browsers; delegate.editors = application.editors; delegate.workspace = application.workspace; delegate.updates = updates }
+            .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in updates.refresh() }
+            .alert("Application update", isPresented: Binding(get: { updates.failure != nil }, set: { if !$0 { updates.dismissFailure() } })) {
+                Button("OK") { updates.dismissFailure() }
+            } message: { Text(updates.failure ?? "") }
         }
         .defaultSize(width: 960, height: 640)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Async Dev Studio") {
+                    let build = ApplicationBuild()
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [
+                        .applicationName: "Async Dev Studio",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development",
+                        .version: build.label
+                    ])
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Project…") { application.workspace?.beginCreatingProject() }
                     .keyboardShortcut("n")
                     .disabled(application.workspace == nil)
                 Button("Restart", action: delegate.restart)
+                Button("Install Update & Restart", action: delegate.installUpdate)
+                    .disabled(updates.pending == nil)
                 Divider()
                 Toggle("Show Archived Project", isOn: $showArchivedProjects)
             }
@@ -63,6 +88,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     var browsers: BrowserRuntime?
     var editors: EditorRuntime?
     var workspace: WorkspaceModel?
+    var updates: ApplicationUpdates?
     private let restartCoordinator = RestartCoordinator()
     private var terminationInProgress = false
 
@@ -72,22 +98,45 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    func installUpdate() {
+        guard !terminationInProgress, workspace?.isDeletingProject != true, let updates else { return }
+        do {
+            let others = NSWorkspace.shared.runningApplications.filter {
+                $0.bundleIdentifier == "dev.asyncstudio.macos" && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            }
+            guard others.isEmpty else { throw ApplicationUpdateError.failed("Close other copies of Async Dev Studio before installing the update.") }
+            try updates.requestInstallation()
+            restartCoordinator.cancel()
+            NSApplication.shared.terminate(nil)
+        } catch {
+            let alert = NSAlert(); alert.messageText = "Couldn’t prepare the update"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK"); alert.runModal()
+        }
+    }
+
     private func cancelTermination() -> NSApplication.TerminateReply {
         restartCoordinator.cancel()
+        updates?.cancelInstallation()
         terminationInProgress = false
         workspace?.isTerminating = false
         return .terminateCancel
     }
 
     private func completeTermination() -> Bool {
-        guard restartCoordinator.isRequested else { return true }
+        let installingUpdate = updates?.isRequested == true
+        guard installingUpdate || restartCoordinator.isRequested else { return true }
         do {
+            if installingUpdate {
+                try updates?.scheduleIfRequested(afterExitOf: ProcessInfo.processInfo.processIdentifier)
+                return true
+            }
             try restartCoordinator.scheduleIfRequested(target: RestartTarget.current(), processID: ProcessInfo.processInfo.processIdentifier)
             return true
         } catch {
             _ = cancelTermination()
             let alert = NSAlert()
-            alert.messageText = "Couldn’t restart the application"
+            alert.messageText = installingUpdate ? "Couldn’t install the update" : "Couldn’t restart the application"
             alert.informativeText = error.localizedDescription + "\nThe application will remain open."
             alert.addButton(withTitle: "OK")
             alert.runModal()
@@ -103,6 +152,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if workspace?.isDeletingProject == true {
             restartCoordinator.cancel()
+            updates?.cancelInstallation()
             NSSound.beep()
             return .terminateCancel
         }

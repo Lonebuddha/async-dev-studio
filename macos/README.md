@@ -101,11 +101,17 @@ From the repository directory:
 open "$HOME/Applications/Async Dev Studio.app"
 ```
 
-To build without replacing the installed app, use `STUDIO_INSTALL_APP=0 ./macos/scripts/build-app.sh`. Quit the running app before installing an update: replacing its bundle while it runs can break Keychain access.
+When the app is running, the build publishes a signed update under `~/Library/Application Support/AsyncDevStudio/Updates/` and leaves the running bundle in place. An **Update ready** banner and **File → Install Update & Restart** action appear within a few seconds. The action follows normal shutdown: save/discard/cancel for editor files, confirmation before stopping terminals, and browser-state checkpoints. Cancelling or a shutdown failure keeps the staged update available.
+
+After approved shutdown, a separate system-shell helper waits for the process to exit, verifies the staged bundle, atomically replaces `~/Applications/Async Dev Studio.app`, and relaunches it. A failed installation or relaunch restores the previous bundle when safe. The previous bundle and installer log remain in a hidden `.async-dev-studio-update.*` directory beside the installed app for recovery. Other running copies must be closed before updating. Older staged builds are ignored, and the installer refuses to downgrade or reinstall the current build.
+
+For the first update from an older version without this action, open the **Install Update.command** path printed by the build, then quit the app normally. The installer waits without stopping commands automatically, installs after exit, and opens the updated app. If no app is running, the build installs directly without launching it.
+
+Use `STUDIO_INSTALL_APP=0 ./macos/scripts/build-app.sh` to create a preview without publishing or installing it. Every build gets a unique `.build/bundles/build.*/Async Dev Studio.app` path, so rebuilding cannot replace a running preview. `.build/latest-app.txt` records the latest preview path. **About Async Dev Studio** shows the Git commit, build identifier, and whether local changes were included.
 
 Apple Command Line Tools with Swift 5.10 or later are sufficient. Full Xcode is optional; open `macos/Package.swift` to work on the package there. The first build downloads pinned Swift packages, so it requires GitHub access. Subsequent builds use cached dependencies.
 
-The script builds an optimized executable in a standard macOS `.app` bundle, applies an ad-hoc development signature, and installs it into `~/Applications/Async Dev Studio.app`. Each build stages and verifies the complete bundle before replacing the installed version. The build copy remains in `macos/.build`. Distribution signing and notarization are not configured. Internal app modules are compiled into the product executable; platform frameworks and third-party dependencies follow their own linking model. SwiftTerm's MIT license and the Teams icon attribution are included in the bundle's resources. The build script also installs the Teams image resource bundle. Build output stays in the ignored `macos/.build` directory.
+The script builds an optimized executable in a standard macOS `.app` bundle and applies an ad-hoc development signature. Bundles and staged copies are verified before installation. Distribution signing and notarization are not configured. Internal app modules are compiled into the product executable; platform frameworks and third-party dependencies follow their own linking model. SwiftTerm's MIT license and the Teams icon attribution are included in the bundle's resources. The build script also installs the Teams image resource bundle. Build output stays in the ignored `macos/.build` directory.
 
 ## Tests
 
@@ -113,7 +119,7 @@ The script builds an optimized executable in a standard macOS `.app` bundle, app
 ./macos/scripts/test.sh
 ```
 
-Tests are a Swift executable with assertions and a nonzero exit code on failure, so they work without XCTest or full Xcode. Use this script rather than `swift test`. Project, terminal, browser, and editor behavior tests were written before their implementation. The default suite has 69 tests. Opt-in WebKit integration tests verify the Teams Safari identity visible to JavaScript and browser profiles across process restarts:
+Tests are a Swift executable with assertions and a nonzero exit code on failure, so they work without XCTest or full Xcode. Use this script rather than `swift test`. Project, terminal, browser, and editor behavior tests were written before their implementation. The runner prints the current suite size and exits nonzero on failure. Opt-in WebKit integration tests verify the Teams Safari identity visible to JavaScript and browser profiles across process restarts:
 
 ```sh
 STUDIO_WEBKIT_INTEGRATION=1 ./macos/scripts/test.sh
@@ -127,16 +133,16 @@ Native editor integration tests run against hidden AppKit controls and temporary
 STUDIO_EDITOR_NATIVE_TESTS=1 ./macos/scripts/test.sh
 ```
 
-The default suite plus native editor checks passes all 71 tests. Enable both integration flags to run all 73 tests.
+Enable the native editor and WebKit integration flags together to include both groups.
 
 Coverage includes project rename validation and identity preservation, rename/delete persistence, failed-save rollback, tab and selection behavior, retaining source files during deletion, restart cancellation, launch failures, target validation, waiting for the old process to exit, exact executable and bundle locations (including paths with shell metacharacters), project creation and validation, persistence and storage failures, legacy workspace compatibility, plugin registration, independent terminal definitions, configuration/rename/delete, tab identity and project switching, actual interactive PTY input/output, resize, startup once, working-directory handling, initialization failure, foreground-process shutdown, next-start configuration, and executable launch failure. Teams coverage includes inheritance, defaults and validation, isolation from generic browser policy, independent instance persistence, icon packaging, Safari version metadata validation, and error-page recovery. Browser coverage includes URL validation, stable profile identity, cookie security/expiry, restore ordering, logout, isolation, persistence failures, concurrent logout during close, and last-page restoration. Editor coverage includes folder validation and definition persistence, lazy tree listing, path/symlink containment, independent file tabs, dirty-state tracking, save/discard/cancel, external-edit conflicts, reload, encoding/BOM preservation, binary rejection, non-overwriting new files, write failures, executable permissions, and cancellation of a workspace close.
 
-Tests use temporary files and short-lived `/bin/sh` sessions without modifying the normal workspace. The optimized app bundle builds successfully; interactive UI inspection was unavailable because the computer-use service could not start. The PTY and session checks run against real local processes rather than a mocked terminal.
+Tests use temporary files and short-lived `/bin/sh` sessions without modifying the normal workspace. Update tests use signed disposable bundles and an opener probe to verify exit waiting, rollback, cancellation, and signature checks without changing the installed application. The PTY and session checks run against real local processes rather than a mocked terminal.
 
 ## Microkernel structure
 
 ```text
-Sources/StudioPlatform/        Native application restart coordination and process launcher
+Sources/StudioPlatform/        Restart/update coordination, staged build discovery, native platform services
 Sources/StudioKernel/          Projects, generic app instances, registry, storage
 Sources/StudioPresentation/    Main-actor workspace state and tab routing
 Sources/TerminalPlugin/        Configuration, PTY sessions, emulator views, runtime factory
