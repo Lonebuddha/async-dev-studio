@@ -1,19 +1,30 @@
+import AppKit
 import Combine
 import Foundation
 import PDFKit
+import UniformTypeIdentifiers
 
 public enum EditorCloseDecision { case save, discard, cancel }
 
 @MainActor
 public final class EditorDocument: ObservableObject, Identifiable {
+    enum Preview {
+        case pdf(PDFDocument)
+        case image(NSImage)
+    }
+
     public let id = UUID()
     @Published public private(set) var url: URL
     @Published public private(set) var text: String
     @Published public private(set) var savedText: String
     @Published public var selection = NSRange(location: 0, length: 0)
     public var isDirty: Bool { text != savedText }
-    public var isMarkdown: Bool { pdf == nil && ["md", "markdown"].contains(url.pathExtension.lowercased()) }
-    @Published private(set) var pdf: PDFDocument?
+    public var isMarkdown: Bool { preview == nil && ["md", "markdown"].contains(url.pathExtension.lowercased()) }
+    @Published private(set) var preview: Preview?
+    var pdf: PDFDocument? {
+        if case .pdf(let document) = preview { return document }
+        return nil
+    }
     var pdfView: PDFView?
     public var encodingName: String { format.label }
     var diskData: Data
@@ -24,19 +35,19 @@ public final class EditorDocument: ObservableObject, Identifiable {
         let (text, format) = try TextEncoding.decode(data)
         self.url = url; self.text = text; savedText = text; diskData = data; self.format = format
     }
-    init(url: URL, pdf: PDFDocument) {
+    init(url: URL, preview: Preview) {
         self.url = url
-        self.pdf = pdf
+        self.preview = preview
         text = ""
         savedText = ""
         diskData = Data()
         format = TextEncoding(encoding: .utf8, prefix: Data())
     }
     public func updateText(_ text: String) {
-        guard pdf == nil, self.text != text else { return }
+        guard preview == nil, self.text != text else { return }
         self.text = text
     }
-    func didReloadPDF(_ pdf: PDFDocument) { self.pdf = pdf }
+    func didReloadPreview(_ preview: Preview) { self.preview = preview }
     func didSave(_ data: Data) { diskData = data; savedText = text }
     func didMove(to url: URL) {
         self.url = url
@@ -105,7 +116,9 @@ public final class EditorWorkspace: ObservableObject {
         if let document = documents.first(where: { $0.url == canonical }) { selectedID = document.id; return document }
         let document: EditorDocument
         if Self.isPDF(url) || Self.isPDF(canonical) {
-            document = try EditorDocument(url: canonical, pdf: readPDF(canonical))
+            document = try EditorDocument(url: canonical, preview: .pdf(readPDF(canonical)))
+        } else if Self.isImage(url) || Self.isImage(canonical) {
+            document = try EditorDocument(url: canonical, preview: .image(readImage(canonical)))
         } else {
             document = try EditorDocument(url: canonical, data: fileSystem.read(canonical))
         }
@@ -113,7 +126,7 @@ public final class EditorWorkspace: ObservableObject {
         return document
     }
     public func save(_ document: EditorDocument) throws {
-        guard document.pdf == nil, document.isDirty else { return }
+        guard document.preview == nil, document.isDirty else { return }
         let data = try document.format.encode(document.text)
         guard data.count <= 10 * 1024 * 1024 else { throw EditorError.tooLarge }
         try fileSystem.write(data, to: document.url, replacing: document.diskData)
@@ -130,14 +143,14 @@ public final class EditorWorkspace: ObservableObject {
     }
     public func reload(_ document: EditorDocument, discardChanges: Bool) throws {
         guard !document.isDirty || discardChanges else { throw EditorError.unsavedChanges }
-        if document.pdf != nil {
-            try document.didReloadPDF(readPDF(document.url))
-        } else {
-            try document.didReload(fileSystem.read(document.url))
+        switch document.preview {
+        case .pdf: try document.didReloadPreview(.pdf(readPDF(document.url)))
+        case .image: try document.didReloadPreview(.image(readImage(document.url)))
+        case nil: try document.didReload(fileSystem.read(document.url))
         }
     }
     private func readPDF(_ url: URL) throws -> PDFDocument {
-        let data = try fileSystem.readPDF(url)
+        let data = try fileSystem.readPreview(url)
         guard let pdf = PDFDocument(data: data) else { throw EditorError.invalidPDF }
         guard !pdf.isLocked else { throw EditorError.lockedPDF }
         guard pdf.pageCount > 0 else { throw EditorError.invalidPDF }
@@ -148,10 +161,20 @@ public final class EditorWorkspace: ObservableObject {
         }
         return pdf
     }
+    private func readImage(_ url: URL) throws -> NSImage {
+        let data = try fileSystem.readPreview(url)
+        guard let image = NSImage(data: data), image.isValid else { throw EditorError.invalidImage }
+        return image
+    }
+    private static func isImage(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
+    }
     private static func isPDF(_ url: URL) -> Bool { url.pathExtension.lowercased() == "pdf" }
 
     @discardableResult public func createFile(name: String, in directory: URL) throws -> EditorDocument {
-        guard !Self.isPDF(URL(fileURLWithPath: name)) else { throw EditorError.createPDF }
+        let filename = URL(fileURLWithPath: name)
+        guard !Self.isPDF(filename) else { throw EditorError.createPDF }
+        guard !Self.isImage(filename) else { throw EditorError.createImage }
         let url = try fileSystem.create(name: name, in: directory)
         loadDirectory(directory)
         return try openFile(url)

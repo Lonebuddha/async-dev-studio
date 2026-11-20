@@ -33,8 +33,8 @@ public struct EditorPane: View {
                     }
                     if let document = workspace.selectedDocument {
                         Group {
-                            if document.pdf != nil {
-                                EditorPDFPane(workspace: workspace, document: document)
+                            if document.preview != nil {
+                                EditorPreviewPane(workspace: workspace, document: document)
                             } else {
                                 EditorDocumentPane(workspace: workspace, document: document)
                             }
@@ -124,7 +124,7 @@ private struct EditorFileTab: View {
         }.padding(8).background(workspace.selectedID == document.id ? Color.accentColor.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5)).help(document.url.path)
             .contextMenu {
-                if document.pdf == nil {
+                if document.preview == nil {
                     Button("Save") { perform { try workspace.save(document) } }
                 }
                 Button("Reload from Disk…") { EditorActions.reload(document, workspace: workspace) }
@@ -137,7 +137,7 @@ private struct EditorFileTab: View {
     }
     private func perform(_ action: () throws -> Void) { do { try action() } catch { workspace.error = error.localizedDescription } }
 }
-private struct EditorPDFPane: View {
+private struct EditorPreviewPane: View {
     let workspace: EditorWorkspace
     @ObservedObject var document: EditorDocument
 
@@ -150,7 +150,16 @@ private struct EditorPDFPane: View {
                 Spacer()
                 Text("Read Only").foregroundStyle(.secondary)
             }.padding(6)
-            EditorPDFView(document: document)
+            switch document.preview {
+            case .pdf:
+                EditorPDFView(document: document)
+            case .image(let image):
+                EditorImageView(image: image, name: document.url.lastPathComponent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(12)
+            case nil:
+                EmptyView()
+            }
             Divider()
             Text(document.url.path).lineLimit(1).truncationMode(.middle)
                 .font(.caption).foregroundStyle(.secondary)
@@ -158,6 +167,27 @@ private struct EditorPDFPane: View {
         }
     }
 }
+private struct EditorImageView: NSViewRepresentable {
+    let image: NSImage
+    let name: String
+
+    func makeNSView(context: Context) -> NSImageView {
+        let view = NSImageView()
+        view.imageScaling = .scaleProportionallyDown
+        view.animates = true
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return view
+    }
+
+    func updateNSView(_ view: NSImageView, context: Context) {
+        if view.image !== image { view.image = image }
+        view.setAccessibilityLabel(name)
+    }
+}
+
 private struct EditorPDFView: NSViewRepresentable {
     let document: EditorDocument
 

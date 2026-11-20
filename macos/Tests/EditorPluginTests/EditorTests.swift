@@ -5,6 +5,53 @@ import PDFKit
 @testable import EditorPlugin
 
 final class EditorTests {
+    @MainActor func testNativeImageTabsOpenAndReload() throws {
+        _ = NSApplication.shared
+        try fixture { root in
+            let bitmap = try makeBitmap(width: 3)
+            let editor = try EditorWorkspace(folder: root)
+            for (name, type) in [("sample.PNG", NSBitmapImageRep.FileType.png), ("sample.jpg", .jpeg),
+                                 ("sample.gif", .gif), ("sample.tiff", .tiff)] {
+                let url = root.appendingPathComponent(name)
+                let data = try expectImageData(bitmap, as: type)
+                try data.write(to: url)
+                let tab = try editor.openFile(url)
+                if case .image(let image) = tab.preview { try expectEqual(image.size.width, 3) }
+                else { try expectTrue(false) }
+                try expectEqual(try editor.openFile(url).id, tab.id)
+                tab.updateText("Attempted edit")
+                try editor.save(tab)
+                try expectFalse(tab.isDirty)
+                try expectEqual(try Data(contentsOf: url), data)
+            }
+
+            let url = root.appendingPathComponent("sample.PNG")
+            let tab = try editor.openFile(url)
+            let revised = try expectImageData(makeBitmap(width: 7), as: .png)
+            try revised.write(to: url, options: .atomic)
+            try editor.reload(tab, discardChanges: false)
+            try Data("invalid".utf8).write(to: url, options: .atomic)
+            try expectThrows(try editor.reload(tab, discardChanges: false))
+            if case .image(let image) = tab.preview { try expectEqual(image.size.width, 7) }
+            else { try expectTrue(false) }
+        }
+    }
+
+    private func makeBitmap(width: Int) throws -> NSBitmapImageRep {
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: 4,
+            bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0) else { throw CocoaError(.fileWriteUnknown) }
+        for y in 0..<4 {
+            for x in 0..<width { bitmap.setColor(.systemBlue, atX: x, y: y) }
+        }
+        return bitmap
+    }
+
+    private func expectImageData(_ bitmap: NSBitmapImageRep, as type: NSBitmapImageRep.FileType) throws -> Data {
+        guard let data = bitmap.representation(using: type, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+        return data
+    }
+
     @MainActor func testNativePDFTabsAreReadOnlyAndReloadFromDisk() throws {
         _ = NSApplication.shared
         try fixture { root in
@@ -795,7 +842,7 @@ private final class FailingEditorFileSystem: EditorFileSystem {
     func canonicalFile(_ url: URL) throws -> URL { try base.canonicalFile(url) }
     func entries(in directory: URL) throws -> [EditorEntry] { try base.entries(in: directory) }
     func read(_ url: URL) throws -> Data { try base.read(url) }
-    func readPDF(_ url: URL) throws -> Data { try base.readPDF(url) }
+    func readPreview(_ url: URL) throws -> Data { try base.readPreview(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { throw CocoaError(.fileWriteNoPermission) }
     func writeExport(_ data: Data, to url: URL) throws { throw CocoaError(.fileWriteNoPermission) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }
@@ -826,7 +873,7 @@ private final class MutationEditorFileSystem: EditorFileSystem {
         return try base.entries(in: directory)
     }
     func read(_ url: URL) throws -> Data { reads.append(url); return try base.read(url) }
-    func readPDF(_ url: URL) throws -> Data { try base.readPDF(url) }
+    func readPreview(_ url: URL) throws -> Data { try base.readPreview(url) }
     func write(_ data: Data, to url: URL, replacing expected: Data) throws { try base.write(data, to: url, replacing: expected) }
     func writeExport(_ data: Data, to url: URL) throws { try base.writeExport(data, to: url) }
     func create(name: String, in directory: URL) throws -> URL { try base.create(name: name, in: directory) }

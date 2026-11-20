@@ -12,7 +12,7 @@ public protocol EditorFileSystem {
     func canonicalFile(_ url: URL) throws -> URL
     func entries(in directory: URL) throws -> [EditorEntry]
     func read(_ url: URL) throws -> Data
-    func readPDF(_ url: URL) throws -> Data
+    func readPreview(_ url: URL) throws -> Data
     func write(_ data: Data, to url: URL, replacing expected: Data) throws
     func writeExport(_ data: Data, to url: URL) throws
     func create(name: String, in directory: URL) throws -> URL
@@ -68,10 +68,10 @@ public struct DiskEditorFileSystem: EditorFileSystem {
         guard data.count <= 10 * 1024 * 1024 else { throw EditorError.tooLarge }
         return data
     }
-    public func readPDF(_ url: URL) throws -> Data {
+    public func readPreview(_ url: URL) throws -> Data {
         let file = try canonicalFile(url)
         guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
-            throw EditorError.invalidPDF
+            throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: file])
         }
         return try Data(contentsOf: file)
     }
